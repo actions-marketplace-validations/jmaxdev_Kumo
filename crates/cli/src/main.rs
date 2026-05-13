@@ -382,20 +382,62 @@ async fn resolve_and_install(
     std::fs::write(&lock_path, yaml)?;
     println!("Generated kumo.lock");
 
+    println!("Selecting primary versions for flat installation...");
+    let mut winners: HashMap<String, String> = HashMap::new();
+    
+    // 1. Direct dependencies always win their slot
+    for (name, version) in &lockfile.dependencies {
+        winners.insert(name.clone(), format!("{}@{}", name, version));
+    }
+    
+    // 2. For transient dependencies, the latest version wins
+    for key in lockfile.packages.keys() {
+        let parts: Vec<&str> = key.split('@').collect();
+        let name = if key.starts_with('@') {
+            format!("@{}", parts[1])
+        } else {
+            parts[0].to_string()
+        };
+        
+        if !winners.contains_key(&name) {
+            let version = if key.starts_with('@') {
+                parts.get(2).unwrap_or(&"0.0.0").to_string()
+            } else {
+                parts.get(1).unwrap_or(&"0.0.0").to_string()
+            };
+            
+            let current_winner_key = winners.get(&name);
+            let should_update = if let Some(winner_key) = current_winner_key {
+                let winner_parts: Vec<&str> = winner_key.split('@').collect();
+                let winner_version = if winner_key.starts_with('@') {
+                    winner_parts.get(2).unwrap_or(&"0.0.0").to_string()
+                } else {
+                    winner_parts.get(1).unwrap_or(&"0.0.0").to_string()
+                };
+                
+                let v_new = semver::Version::parse(&version).unwrap_or_else(|_| semver::Version::new(0, 0, 0));
+                let v_old = semver::Version::parse(&winner_version).unwrap_or_else(|_| semver::Version::new(0, 0, 0));
+                v_new > v_old
+            } else {
+                true
+            };
+            
+            if should_update {
+                winners.insert(name.clone(), key.clone());
+            }
+        }
+    }
+
     println!(
-        "Downloading {} packages in parallel...",
-        lockfile.packages.len()
+        "Downloading and linking {} unique packages...",
+        winners.len()
     );
 
     let cpus = num_cpus::get();
     let concurrent_limit = cpus * 2;
-    println!(
-        "Concurrency set to {} (based on {} CPU cores)",
-        concurrent_limit, cpus
-    );
-
+    
     let multi_progress = indicatif::MultiProgress::new();
-    let main_pb = multi_progress.add(indicatif::ProgressBar::new(lockfile.packages.len() as u64));
+    let main_pb = multi_progress.add(indicatif::ProgressBar::new(winners.len() as u64));
     main_pb.set_style(
         indicatif::ProgressStyle::with_template(
             "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
@@ -405,7 +447,15 @@ async fn resolve_and_install(
     );
     main_pb.set_message("Installing packages...");
 
-    let stream = futures::stream::iter(lockfile.packages.clone()).map(|(key, pkg)| {
+    // Create a list of packages to install based on winners
+    let packages_to_install: Vec<(String, resolver::LockedPackage)> = winners
+        .values()
+        .filter_map(|key| {
+            lockfile.packages.get(key).map(|p| (key.clone(), p.clone()))
+        })
+        .collect();
+
+    let stream = futures::stream::iter(packages_to_install).map(|(key, pkg)| {
         let store = store;
         let security = security;
         let main_pb = main_pb.clone();
@@ -574,25 +624,22 @@ async fn resolve_and_install(
     let results: Vec<_> = stream.buffer_unordered(concurrent_limit).collect().await;
 
     main_pb.finish_with_message("Done!");
-    println!("Installed {} packages.", lockfile.packages.len());
+    println!("Installed {} unique packages.", winners.len());
 
     // --- NEW PHASE: Run install scripts in order ---
     println!("Running lifecycle scripts...");
-    for (key, pkg) in &lockfile.packages {
-        if let Some(scripts) = &pkg.scripts {
-            let parts: Vec<&str> = key.split('@').collect();
-            let name = if key.starts_with('@') {
-                format!("@{}", parts[1])
-            } else {
-                parts[0].to_string()
-            };
-            let name = name.replace('/', std::path::MAIN_SEPARATOR_STR);
-            let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
-            if !scripts.is_empty() {
-                let _ = run_install_scripts(&target_dir, scripts).await;
+    for (name, key) in &winners {
+        if let Some(pkg) = lockfile.packages.get(key) {
+            if let Some(scripts) = &pkg.scripts {
+                let normalized_name = name.replace('/', std::path::MAIN_SEPARATOR_STR);
+                let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&normalized_name);
+                if !scripts.is_empty() {
+                    let _ = run_install_scripts(&target_dir, scripts).await;
+                }
             }
         }
     }
+
     let total_bytes: u64 = lockfile
         .packages
         .values()
