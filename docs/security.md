@@ -43,7 +43,7 @@ This allows only the specified packages to run their installation scripts.
 Attackers often release packages with names very similar to popular ones. These are usually detected and removed quickly. By enforcing a `minimum_release_age` (default 24h), Kumo ensures you don't install a "poisoned" package before it can be reported.
 
 ### 3. Vulnerability Scanning
-Kumo integrates with the **OSV (Open Source Vulnerabilities)** database. Durante la fase de resolución, comprueba cada versión de los paquetes. Si una vulnerabilidad coincide con el umbral de `min_severity`, la instalación se aborta.
+Kumo integrates with the **OSV (Open Source Vulnerabilities)** database. During the resolution phase, it checks every package version. If a vulnerability matches the `min_severity` threshold, the installation is aborted.
 
 ### 4. License Compliance
 Legal risks are also part of the supply chain. Kumo can ensure that only packages with approved licenses enter your codebase.

@@ -66,7 +66,7 @@ Kumo uses a policy engine to determine if a package is safe. The default policy:
 
 ## 📄 License
 
-Kitsu is licensed under the **[UnSetSoft Public License (UPL) 1.0](LICENSE.md)**.
+Kumo is licensed under the **[UnSetSoft Public License (UPL) 1.0](LICENSE.md)**.
 
 - ✅ You may use **parts** of the code in other projects with proper attribution
 - ❌ You may **not** distribute the original or modified versions

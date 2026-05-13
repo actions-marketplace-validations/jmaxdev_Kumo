@@ -8,6 +8,15 @@ Kumo is a security-first, space-efficient package manager. This document covers 
 kumo [COMMAND] [OPTIONS]
 ```
 
+### Running Scripts and Binaries
+Kumo can execute scripts defined in your `package.json` or `kumo.json`, or run binaries located in your project's `.bin` directory.
+
+```bash
+kumo <script-name> [args...]
+kumo <binary-name> [args...]
+```
+For example, if you have a `test` script in your `package.json`, you can run it with `kumo test`.
+
 ## Dependency Management
 
 Kumo uses a space-efficient approach to dependency management. By default, it stores packages in a global store located at `~/.kumo/store` and links them into your project.
@@ -72,12 +81,13 @@ kumo stats
 ### `prune`
 Maintenance command to remove unnecessary files.
 
-#### `prune cache`
+#### `prune cache [--full]`
 Removes orphaned files from the global store.
+- `--full`: Also clears all package metadata, forcing a re-fetch of package info on next install.
 
 #### `prune deps [--full]`
 Cleans the local dependencies directory.
-- `--full`: Also removes the `kumo.lock` file.
+- `--full`: Removes the entire directory (e.g., `node_modules/` or `dependencies/`) and the `kumo.lock` file.
 
 ```bash
 kumo prune cache
