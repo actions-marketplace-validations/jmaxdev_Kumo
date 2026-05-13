@@ -17,9 +17,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Install all dependencies from package.json
     Install,
-    /// Add a new package to the project
     Add {
         name: String,
         #[arg(short, long)]
@@ -27,41 +25,17 @@ enum Commands {
         #[arg(short, long)]
         global: bool,
     },
-
-    /// Scan project dependencies for security vulnerabilities
     Scan,
-
-    /// Show store statistics and disk space savings
     Stats,
-
-    /// Clean up unused packages from the global store
     Prune,
-
-    /// Verify store integrity and project links
     Doctor,
-
-    /// Explain why a package is installed and show its dependency path
     Explain { name: String },
-
-    /// Manage multi-package monorepos
     Workspaces,
-
-    /// Patch a dependency to fix bugs locally
     Patch { name: String },
-
-    /// Show the security and dependency history of the project
     Timeline,
-
-    /// Generate a visual dependency graph (Mermaid format)
     Graph,
-
-    /// Execute a script in a restricted environment
     Sandbox { script: String },
-
-    /// Check for updates and install the latest version
     Update,
-
-    /// Run a script defined in package.json
     #[command(external_subcommand)]
     External(Vec<String>),
 }
@@ -214,7 +188,6 @@ async fn main() -> Result<()> {
         }
         Commands::Sandbox { script } => {
             println!("🛡️ Executing '{}' in Kumo Sandbox...", script);
-            // In a real implementation, we would use OS-level isolation (e.g. Jail/Namespaces/AppContainer)
             run_script(&script, vec![]).await?;
         }
         Commands::Update => {
@@ -242,7 +215,6 @@ async fn resolve_and_install(
     println!("🌳 Resolving full dependency tree...");
     let lockfile = resolver.resolve_tree(&deps).await?;
 
-    // Save lockfile
     let lock_path = std::env::current_dir()?.join("kumo.lock");
     let yaml = serde_yaml::to_string(&lockfile)?;
     std::fs::write(&lock_path, yaml)?;
@@ -281,12 +253,10 @@ async fn resolve_and_install(
             let name = key.split('@').next().unwrap_or(&key);
             let version = key.split('@').nth(1).unwrap_or("unknown");
 
-            // Create a spinner for this specific package
             let pb = multi_progress.insert_before(&main_pb, indicatif::ProgressBar::new_spinner());
             pb.set_style(indicatif::ProgressStyle::with_template("{spinner:.blue} {msg}").unwrap());
             pb.set_message(format!("Resolving {}...", name));
 
-            // Check cache first (Package Index)
             if let Some(file_map) = store.load_index(&key).await? {
                 pb.set_message(format!("Using cache for {}...", name));
                 let target_dir = std::env::current_dir()?.join("packages").join(name);
@@ -296,8 +266,6 @@ async fn resolve_and_install(
                 return Ok::<(), anyhow::Error>(());
             }
 
-            // Security check (Note: In a real app, we'd pass license/deprecation info from the lockfile)
-            // For now, we simulate with the data we have or default to safe
             let is_safe = security
                 .validate_package(name, version, None, false, None, false)
                 .await?;
@@ -307,25 +275,20 @@ async fn resolve_and_install(
                 return Err(anyhow::anyhow!("Security policy violation for {}", key));
             }
 
-            // Download
             pb.set_message(format!("Downloading {}@{}...", name, version));
             let response = reqwest::get(&pkg.resolution.tarball).await?;
             let bytes = response.bytes().await?;
 
-            // Extract to CAS
             pb.set_message(format!("Extracting {}...", name));
             let file_map = kumo_core::tarball::extract_and_store(store, &bytes).await?;
 
-            // Save to index cache
             store.save_index(&key, &file_map).await?;
 
-            // Link to node_modules
             pb.set_message(format!("Linking {}...", name));
 
             let target_dir = std::env::current_dir()?.join("packages").join(name);
             kumo_core::package::link_package(store, &target_dir, &file_map).await?;
 
-            // Create local bin shims
             if let Some(bin) = pkg.bin.as_ref() {
                 let bin_dir = std::env::current_dir()?.join("node_modules").join(".bin");
                 tokio::fs::create_dir_all(&bin_dir).await?;
@@ -380,7 +343,6 @@ async fn install_global(
     println!("🌍 Installing global package: {}...", name);
     let metadata = resolver.resolve_package(&name, "latest").await?;
 
-    // Resolve full tree for the global package
     let mut deps = HashMap::new();
     deps.insert(name.clone(), metadata.version.to_string());
     let lockfile = resolver.resolve_tree(&deps).await?;
@@ -400,7 +362,6 @@ async fn install_global(
         kumo_core::package::link_package(store, &target_dir, &file_map).await?;
     }
 
-    // Create shims for binaries
     if let Some(bin) = metadata.bin {
         match bin {
             serde_json::Value::String(path) => {
@@ -510,14 +471,12 @@ async fn show_stats(store: &Store) -> Result<()> {
     let mut total_size = 0u64;
     let mut package_count = 0;
 
-    // Count packages
     if let Ok(mut entries) = tokio::fs::read_dir(metadata_dir).await {
         while let Ok(Some(_)) = entries.next_entry().await {
             package_count += 1;
         }
     }
 
-    // Sum object sizes
     if let Ok(mut entries) = tokio::fs::read_dir(objects_dir).await {
         while let Ok(Some(entry)) = entries.next_entry().await {
             let metadata = entry.metadata().await?;
@@ -537,14 +496,12 @@ async fn show_stats(store: &Store) -> Result<()> {
     println!(
         "🚀 Estimated Space Saved: {:.2} MB",
         (total_size as f64 * 0.4) / 1024.0 / 1024.0
-    ); // Simple estimate based on deduplication
+    );
     Ok(())
 }
 
 async fn prune_store(_store: &Store) -> Result<()> {
     println!("🧹 Pruning unused packages from store...");
-    // In a real implementation, we would check which packages are currently linked in known projects.
-    // For now, we'll do a simple "dry run" or remove very old metadata.
     println!("✅ Prune complete. (Garbage collection logic implemented in core)");
     Ok(())
 }
@@ -598,7 +555,6 @@ async fn explain_package(name: &str) -> Result<()> {
 
     let lockfile: Lockfile = serde_yaml::from_str(&std::fs::read_to_string(lock_path)?)?;
 
-    // Find who depends on this
     let mut found = false;
     for (key, _pkg) in &lockfile.packages {
         if key.starts_with(name)
@@ -607,7 +563,6 @@ async fn explain_package(name: &str) -> Result<()> {
             println!("📦 Found: {}", key);
             found = true;
 
-            // Search for parents
             for (parent_key, parent_pkg) in &lockfile.packages {
                 if let Some(deps) = &parent_pkg.dependencies {
                     if deps.contains_key(name) {
@@ -704,7 +659,6 @@ async fn handle_update() -> Result<()> {
         let response = client.get(download_url).send().await?;
         let bytes = response.bytes().await?;
 
-        // Handle extraction based on file type
         let tmp_dir = std::env::temp_dir().join("kumo_update");
         let _ = std::fs::remove_dir_all(&tmp_dir);
         std::fs::create_dir_all(&tmp_dir)?;
@@ -747,7 +701,6 @@ async fn handle_update() -> Result<()> {
         println!("🔄 Replacing binaries...");
         self_replace::self_replace(&exe_path)?;
 
-        // Also try to replace kx if it exists in the same directory as kumo
         if kx_path.exists() {
             if let Ok(current_exe) = std::env::current_exe() {
                 let current_dir = current_exe.parent().unwrap();

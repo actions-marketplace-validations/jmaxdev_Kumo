@@ -5,8 +5,6 @@ use std::collections::HashMap;
 use std::io::Read;
 use tar::Archive;
 
-/// Extracts a tarball and adds all its files to the CAS store.
-/// Returns a map of relative file paths within the package to their content hashes.
 pub async fn extract_and_store(
     store: &Store,
     tarball_data: &[u8],
@@ -20,14 +18,12 @@ pub async fn extract_and_store(
     {
         let mut entry = entry.context("Failed to read entry")?;
 
-        // Skip directories, we only care about files
         if !entry.header().entry_type().is_file() {
             continue;
         }
 
         let path = entry.path()?.to_string_lossy().to_string();
 
-        // Clean the path (remove leading 'package/' which is common in npm tarballs)
         let clean_path = if path.starts_with("package/") {
             &path[8..]
         } else {

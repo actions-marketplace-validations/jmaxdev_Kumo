@@ -72,7 +72,6 @@ async function run() {
 
     console.log('✅ Version update complete!');
 
-    // Git operations
     try {
         const { execSync } = require('child_process');
         console.log('📦 Committing and tagging...');

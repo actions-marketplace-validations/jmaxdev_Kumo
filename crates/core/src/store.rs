@@ -17,8 +17,6 @@ impl Store {
         &self.root
     }
 
-    /// Adds a file to the content-addressable store.
-    /// Returns the BLAKE3 hash of the file.
     pub async fn add_file(&self, content: &[u8]) -> Result<String> {
         let mut hasher = Hasher::new();
         hasher.update(content);
@@ -35,12 +33,10 @@ impl Store {
         Ok(hash)
     }
 
-    /// Gets the path to a file in the store based on its hash.
     pub fn get_path(&self, hash: &str) -> PathBuf {
         self.root.join("objects").join(&hash[0..2]).join(&hash[2..])
     }
 
-    /// Ensures the store directory exists.
     pub async fn init(&self) -> Result<()> {
         fs::create_dir_all(&self.root)
             .await
@@ -54,7 +50,6 @@ impl Store {
         Ok(())
     }
 
-    /// Saves a package index (file map) to the store.
     pub async fn save_index(&self, key: &str, file_map: &HashMap<String, String>) -> Result<()> {
         let path = self.get_index_path(key);
         let json = serde_json::to_string(file_map)?;
@@ -63,7 +58,6 @@ impl Store {
             .context("Failed to save package index")
     }
 
-    /// Loads a package index if it exists.
     pub async fn load_index(&self, key: &str) -> Result<Option<HashMap<String, String>>> {
         let path = self.get_index_path(key);
         if path.exists() {
@@ -76,7 +70,6 @@ impl Store {
     }
 
     fn get_index_path(&self, key: &str) -> PathBuf {
-        // Sanitize key for filesystem
         let safe_key = key.replace('/', "__").replace('@', "@@");
         self.root
             .join("metadata")

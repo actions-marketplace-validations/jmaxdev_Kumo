@@ -6,9 +6,7 @@ use std::process::Command;
 #[command(name = "kx")]
 #[command(about = "Kumo Execute: Run binaries from node_modules/.bin", long_about = None)]
 struct KxCli {
-    /// The binary to execute
     binary: String,
-    /// Arguments for the binary
     #[arg(trailing_var_arg = true)]
     args: Vec<String>,
 }
@@ -29,7 +27,6 @@ async fn main() -> Result<()> {
     } else if bin_path.exists() {
         bin_path
     } else {
-        // Not found locally, ask to install
         println!("🎁 Package '{}' not found locally.", cli.binary);
         print!("❓ Do you want to install and execute it using Kumo? (y/N): ");
         use std::io::Write;
@@ -72,7 +69,6 @@ async fn install_temp_package(
     println!("🚚 Fetching {} from registry...", name);
     let metadata = resolver.resolve_package(name, "latest").await?;
 
-    // Simple one-package install for KX
     let response = reqwest::get(&metadata.dist.tarball).await?;
     let bytes = response.bytes().await?;
 
@@ -89,7 +85,6 @@ async fn install_temp_package(
     tokio::fs::create_dir_all(&bin_dir).await?;
     kumo_core::package::link_package(store, &node_modules, &file_map).await?;
 
-    // Create shim in temp bin
     if let Some(bin) = metadata.bin {
         match bin {
             serde_json::Value::String(path) => {

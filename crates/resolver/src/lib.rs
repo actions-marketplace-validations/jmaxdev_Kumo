@@ -38,7 +38,7 @@ struct RegistryVersion {
     dependencies: Option<HashMap<String, String>>,
     dist: TarballInfo,
     license: Option<serde_json::Value>,
-    deprecated: Option<String>,
+    deprecated: Option<serde_json::Value>,
     scripts: Option<HashMap<String, String>>,
     bin: Option<serde_json::Value>,
 }
@@ -70,7 +70,6 @@ impl Resolver {
         }
     }
 
-    /// Resolves a single package version requirement by fetching from npm with caching.
     pub async fn resolve_package(&self, name: &str, range: &str) -> Result<PackageMetadata> {
         let cache_dir = dirs::home_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -95,13 +94,11 @@ impl Resolver {
                 .await
                 .with_context(|| format!("Failed to fetch metadata for {}", name))?;
 
-            // Save to cache
             let json = serde_json::to_string(&res)?;
             let _ = std::fs::write(&cache_path, json);
             res
         };
 
-        // 1. Determine the version to use
         let version_str = if range == "latest" || range == "*" || range == "" {
             response
                 .dist_tags
@@ -109,7 +106,6 @@ impl Resolver {
                 .ok_or_else(|| anyhow!("No latest tag found for {}", name))?
                 .to_string()
         } else {
-            // Find the highest version matching the range
             let req =
                 VersionReq::parse(range).map_err(|_| anyhow!("Invalid semver range: {}", range))?;
             let mut versions: Vec<Version> = response
@@ -151,20 +147,27 @@ impl Resolver {
             }
         });
 
+        let deprecated = version_data.deprecated.as_ref().and_then(|d| {
+            if let Some(s) = d.as_str() {
+                Some(s.to_string())
+            } else {
+                None
+            }
+        });
+
         Ok(PackageMetadata {
             name: version_data.name.clone(),
             version: Version::parse(&version_data.version)?,
             dependencies: version_data.dependencies.clone(),
             dist: version_data.dist.clone(),
             license,
-            deprecated: version_data.deprecated.clone(),
+            deprecated,
             published_at,
             has_install_scripts,
             bin: version_data.bin.clone(),
         })
     }
 
-    /// Recursively resolves a full dependency tree and returns a Lockfile.
     pub async fn resolve_tree(&self, root_deps: &HashMap<String, String>) -> Result<Lockfile> {
         let mut packages = HashMap::new();
         let mut resolved_root_deps = HashMap::new();
@@ -194,7 +197,6 @@ impl Resolver {
                 );
             }
 
-            // Only add to root dependencies if it was in the original root_deps
             if root_deps.contains_key(&name) {
                 resolved_root_deps.insert(name, metadata.version.to_string());
             }
