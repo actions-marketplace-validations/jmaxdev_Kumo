@@ -412,6 +412,27 @@ async fn resolve_and_install(
                 }
                 let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
                 kumo_core::package::link_package(store, &target_dir, &file_map).await?;
+                
+                // Still need to create shims for cached packages!
+                if let Some(bin) = pkg.bin.as_ref() {
+                    let bin_dir = std::env::current_dir()?.join(&deps_dir_name).join(".bin");
+                    tokio::fs::create_dir_all(&bin_dir).await?;
+
+                    match bin {
+                        serde_json::Value::String(path) => {
+                            create_shim(&bin_dir, &name, &target_dir.join(path)).await?;
+                        }
+                        serde_json::Value::Object(map) => {
+                            for (cmd_name, path) in map {
+                                if let Some(p) = path.as_str() {
+                                    create_shim(&bin_dir, &cmd_name, &target_dir.join(p)).await?;
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
                 if let Some(pb) = pb {
                     pb.finish_and_clear();
                 }
