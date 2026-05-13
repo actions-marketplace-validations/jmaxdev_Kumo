@@ -101,21 +101,16 @@ impl Resolver {
 
         let response: RegistryResponse = if cache_path.exists() {
             let content = std::fs::read_to_string(&cache_path)?;
-            serde_json::from_str(&content)?
+            let res: RegistryResponse = serde_json::from_str(&content)?;
+            // Check if it's a "full" response (from older versions it might be partial)
+            // If it's missing versions, we re-fetch
+            if res.versions.is_empty() {
+                self.fetch_and_cache_metadata(name, &cache_path).await?
+            } else {
+                res
+            }
         } else {
-            let url = format!("{}/{}", self.registry_url, name);
-            let res: RegistryResponse = self
-                .client
-                .get(&url)
-                .send()
-                .await?
-                .json()
-                .await
-                .with_context(|| format!("Failed to fetch metadata for {}", name))?;
-
-            let json = serde_json::to_string(&res)?;
-            let _ = std::fs::write(&cache_path, json);
-            res
+            self.fetch_and_cache_metadata(name, &cache_path).await?
         };
 
         let version_str = if range == "latest" || range == "*" || range == "" {
@@ -239,11 +234,35 @@ impl Resolver {
                 resolved_root_deps.insert(name, metadata.version.to_string());
             }
         }
-
         Ok(Lockfile {
             lockfile_version: "1.0".to_string(),
             dependencies: resolved_root_deps,
             packages,
         })
+    }
+
+    async fn fetch_and_cache_metadata(&self, name: &str, cache_path: &std::path::Path) -> Result<RegistryResponse> {
+        let url = format!("{}/{}", self.registry_url, name);
+        let mut last_err = None;
+
+        for attempt in 0..3 {
+            if attempt > 0 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempt)).await;
+            }
+
+            match self.client.get(&url).send().await {
+                Ok(res) => {
+                    let metadata: RegistryResponse = res.json().await.with_context(|| format!("Failed to parse metadata for {}", name))?;
+                    let json = serde_json::to_string(&metadata)?;
+                    let _ = std::fs::write(cache_path, json);
+                    return Ok(metadata);
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                }
+            }
+        }
+
+        Err(anyhow!("Failed to fetch metadata for {} after 3 attempts: {:?}", name, last_err))
     }
 }
