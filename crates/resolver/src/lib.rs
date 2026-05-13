@@ -95,7 +95,7 @@ impl Resolver {
             .pool_max_idle_per_host(20)
             .pool_idle_timeout(std::time::Duration::from_secs(90))
             .tcp_nodelay(true)
-            .user_agent("kumo-pkg/0.1.35")
+            .user_agent(format!("kumo-pkg/{}", env!("CARGO_PKG_VERSION")))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 

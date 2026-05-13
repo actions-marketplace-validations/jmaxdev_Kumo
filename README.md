@@ -49,6 +49,12 @@ kumo add express
 kumo install
 ```
 
+### Run scripts (like npm run)
+```bash
+kumo start
+kumo app:start
+```
+
 ### Update Kumo
 Keep your installation up to date with the latest security features and performance improvements:
 ```bash

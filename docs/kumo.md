@@ -8,14 +8,13 @@ Kumo is a security-first, space-efficient package manager. This document covers 
 kumo [COMMAND] [OPTIONS]
 ```
 
-### Running Scripts and Binaries
-Kumo can execute scripts defined in your `package.json` or `kumo.json`, or run binaries located in your project's `.bin` directory.
+Kumo can execute scripts defined in your `package.json` or `kumo.json`, or run binaries located in your project's `.bin` directory. This works similarly to `npm run` but with automatic `.bin` inyected into the `PATH`.
 
 ```bash
 kumo <script-name> [args...]
 kumo <binary-name> [args...]
 ```
-For example, if you have a `test` script in your `package.json`, you can run it with `kumo test`.
+For example, if you have a `start` script in your `package.json`, you can run it with `kumo start`.
 
 ## Dependency Management
 
@@ -83,14 +82,14 @@ Maintenance command to remove unnecessary files.
 
 #### `prune cache [--full]`
 Removes orphaned files from the global store.
-- `--full`: Also clears all package metadata, forcing a re-fetch of package info on next install.
+- `--full`: Wipes the entire global store (all metadata and objects). Use this for a complete reset of the cache.
 
 #### `prune deps [--full]`
 Cleans the local dependencies directory.
 - `--full`: Removes the entire directory (e.g., `node_modules/` or `dependencies/`) and the `kumo.lock` file.
 
 ```bash
-kumo prune cache
+kumo prune cache [--full]
 kumo prune deps [--full]
 ```
 
@@ -130,10 +129,11 @@ kumo timeline
 ```
 
 ### `graph`
-Generates a Mermaid-compatible dependency graph of the project.
+Generates a Graphviz DOT file (`dependency-graph.dot`) of the project's dependency tree. You can visualize it using tools like `dot`.
 
 ```bash
 kumo graph
+# To visualize: dot -Tsvg dependency-graph.dot -o graph.svg
 ```
 
 ### `sandbox <script>`
@@ -153,9 +153,11 @@ Generates a default `kumo.config.json` file in the current directory.
 kumo config init
 ```
 
-### `update`
+### `update [--pre]`
 Checks for and installs the latest version of the Kumo CLI from GitHub.
+- `--pre`: Includes pre-releases (alpha, beta, rc) in the update search.
 
 ```bash
 kumo update
+kumo update --pre
 ```
