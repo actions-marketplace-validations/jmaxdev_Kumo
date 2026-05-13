@@ -1054,22 +1054,78 @@ async fn generate_graph() -> Result<()> {
 }
 
 async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
+    // 1. Try to find script in package.json or kumo.json
+    let project_dir = std::env::current_dir()?;
+    let config_files = ["package.json", "kumo.json"];
+    
+    for config_file in config_files {
+        let path = project_dir.join(config_file);
+        if path.exists() {
+            let content = std::fs::read_to_string(path)?;
+            let v: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
+            if let Some(script_cmd) = v["scripts"][name].as_str() {
+                println!("> {}", script_cmd);
+                let mut shell_cmd = if cfg!(target_os = "windows") {
+                    let mut c = std::process::Command::new("cmd");
+                    c.arg("/c").arg(script_cmd);
+                    c
+                } else {
+                    let mut c = std::process::Command::new("sh");
+                    c.arg("-c").arg(script_cmd);
+                    c
+                };
+                
+                // Add dependencies/.bin to PATH so scripts can find installed tools
+                let deps_dir = common::get_deps_dir();
+                let bin_dir = project_dir.join(deps_dir).join(".bin");
+                if let Some(old_path) = std::env::var_os("PATH") {
+                    let mut paths = std::vec![bin_dir];
+                    paths.extend(std::env::split_paths(&old_path));
+                    let new_path = std::env::join_paths(paths)?;
+                    shell_cmd.env("PATH", new_path);
+                }
+
+                shell_cmd.args(args);
+                let status = shell_cmd.status()?;
+                if !status.success() {
+                    std::process::exit(status.code().unwrap_or(1));
+                }
+                return Ok(());
+            }
+        }
+    }
+
+    // 2. Fallback: Try to find binary in .bin
     let deps_dir = common::get_deps_dir();
-    let bin_dir = std::env::current_dir()?.join(&deps_dir).join(".bin");
-    let cmd_path = bin_dir.join(format!("{}.cmd", name));
+    let bin_dir = project_dir.join(&deps_dir).join(".bin");
+    
+    let possible_bins = if cfg!(target_os = "windows") {
+        vec![format!("{}.cmd", name), format!("{}.exe", name), format!("{}.bat", name), name.to_string()]
+    } else {
+        vec![name.to_string()]
+    };
 
-    if !cmd_path.exists() {
-        anyhow::bail!("Script or binary '{}' not found in .bin", name);
+    for bin_name in possible_bins {
+        let bin_path = bin_dir.join(&bin_name);
+        if bin_path.exists() {
+            let mut command = if bin_name.ends_with(".cmd") || bin_name.ends_with(".bat") {
+                let mut c = std::process::Command::new("cmd");
+                c.arg("/c").arg(bin_path);
+                c
+            } else {
+                std::process::Command::new(bin_path)
+            };
+            
+            command.args(args);
+            let status = command.status()?;
+            if !status.success() {
+                std::process::exit(status.code().unwrap_or(1));
+            }
+            return Ok(());
+        }
     }
 
-    let mut command = std::process::Command::new("cmd");
-    command.arg("/c").arg(cmd_path).args(args);
-
-    let status = command.status()?;
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
-    }
-    Ok(())
+    anyhow::bail!("Script or binary '{}' not found in configuration or .bin", name);
 }
 
 async fn handle_update(include_pre: bool) -> Result<()> {
