@@ -720,6 +720,7 @@ async fn run_install_scripts(
             // Set NODE_PATH to the deps dir so node can find other packages
             if let Some(deps_dir) = pkg_dir.parent() {
                 command.env("NODE_PATH", deps_dir);
+                command.env("NODE_NO_WARNINGS", "1");
 
                 // Also add .bin to PATH so scripts can find local binaries
                 let bin_dir = deps_dir.join(".bin");
