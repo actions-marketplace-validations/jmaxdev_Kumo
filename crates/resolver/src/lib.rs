@@ -37,7 +37,7 @@ struct RegistryVersion {
     version: String,
     dependencies: Option<HashMap<String, String>>,
     dist: TarballInfo,
-    license: Option<String>,
+    license: Option<serde_json::Value>,
     deprecated: Option<String>,
     scripts: Option<HashMap<String, String>>,
     bin: Option<serde_json::Value>,
@@ -143,12 +143,20 @@ impl Resolver {
                 || s.contains_key("postinstall")
         });
 
+        let license = version_data.license.as_ref().and_then(|l| {
+            if let Some(s) = l.as_str() {
+                Some(s.to_string())
+            } else {
+                l.get("type").and_then(|t| t.as_str()).map(|s| s.to_string())
+            }
+        });
+
         Ok(PackageMetadata {
             name: version_data.name.clone(),
             version: Version::parse(&version_data.version)?,
             dependencies: version_data.dependencies.clone(),
             dist: version_data.dist.clone(),
-            license: version_data.license.clone(),
+            license,
             deprecated: version_data.deprecated.clone(),
             published_at,
             has_install_scripts,
