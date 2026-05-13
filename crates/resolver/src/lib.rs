@@ -20,8 +20,20 @@ pub struct PackageMetadata {
 pub struct TarballInfo {
     pub tarball: String,
     pub shasum: String,
-    #[serde(rename = "unpackedSize", default)]
+    #[serde(default)]
     pub size: u64,
+    #[serde(rename = "unpackedSize", default)]
+    pub unpacked_size: u64,
+}
+
+impl TarballInfo {
+    pub fn get_size(&self) -> u64 {
+        if self.unpacked_size > 0 {
+            self.unpacked_size
+        } else {
+            self.size
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

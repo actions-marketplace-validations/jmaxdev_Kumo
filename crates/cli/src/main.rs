@@ -302,7 +302,7 @@ async fn resolve_and_install(
             };
             // Normalize name for Windows paths if it contains slashes
             let name = name.replace('/', std::path::MAIN_SEPARATOR_STR);
-            
+
             let version = if key.starts_with('@') {
                 parts.get(2).unwrap_or(&"unknown").to_string()
             } else {
@@ -375,16 +375,22 @@ async fn resolve_and_install(
 
     main_pb.finish_with_message("Done!");
     println!("Installed {} packages.", lockfile.packages.len());
-    println!(
-        "Total size: {} MB",
-        lockfile
-            .packages
-            .values()
-            .map(|p| p.resolution.size)
-            .sum::<u64>()
-            / 1024
-            / 1024
-    );
+    let total_bytes: u64 = lockfile
+        .packages
+        .values()
+        .map(|p| p.resolution.get_size())
+        .sum();
+
+    if total_bytes >= 1024 * 1024 * 1024 {
+        println!(
+            "Total size: {:.2} GB",
+            total_bytes as f64 / 1024.0 / 1024.0 / 1024.0
+        );
+    } else if total_bytes >= 1024 * 1024 {
+        println!("Total size: {:.2} MB", total_bytes as f64 / 1024.0 / 1024.0);
+    } else {
+        println!("Total size: {:.2} KB", total_bytes as f64 / 1024.0);
+    }
 
     let mut errors = 0;
     for res in results {
@@ -424,7 +430,7 @@ async fn install_global(
     for (key, pkg) in &lockfile.packages {
         let pkg_name = key.split('@').next().unwrap();
         let normalized_name = pkg_name.replace('/', std::path::MAIN_SEPARATOR_STR);
-        
+
         let bytes = reqwest::get(&pkg.resolution.tarball).await?.bytes().await?;
         let file_map = kumo_core::tarball::extract_and_store(store, &bytes).await?;
         let target_dir = global_deps_dir.join(normalized_name);
@@ -558,14 +564,32 @@ async fn show_stats(store: &Store) -> Result<()> {
 
     println!("Total Unique Packages: {}", package_count);
     println!("Total Unique Files: {}", object_count);
-    println!(
-        "Store Disk Usage: {:.2} MB",
-        total_size as f64 / 1024.0 / 1024.0
-    );
-    println!(
-        "Estimated Space Saved: {:.2} MB",
-        (total_size as f64 * 0.4) / 1024.0 / 1024.0
-    );
+
+    if total_size >= 1024 * 1024 * 1024 {
+        println!(
+            "Store Disk Usage: {:.2} GB",
+            total_size as f64 / 1024.0 / 1024.0 / 1024.0
+        );
+        println!(
+            "Estimated Space Saved: {:.2} GB",
+            (total_size as f64 * 0.4) / 1024.0 / 1024.0 / 1024.0
+        );
+    } else if total_size >= 1024 * 1024 {
+        println!(
+            "Store Disk Usage: {:.2} MB",
+            total_size as f64 / 1024.0 / 1024.0
+        );
+        println!(
+            "Estimated Space Saved: {:.2} MB",
+            (total_size as f64 * 0.4) / 1024.0 / 1024.0
+        );
+    } else {
+        println!("Store Disk Usage: {:.2} KB", total_size as f64 / 1024.0);
+        println!(
+            "Estimated Space Saved: {:.2} KB",
+            (total_size as f64 * 0.4) / 1024.0
+        );
+    }
     Ok(())
 }
 
