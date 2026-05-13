@@ -913,17 +913,41 @@ async fn show_stats(store: &Store) -> Result<()> {
 
 async fn prune_store(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
     match subcommand {
-        PruneSubcommand::Cache { full: _ } => {
-            println!("Pruning global store objects...");
-            let deleted = store.prune().await?;
-            println!("Cleaned up {} unreferenced objects.", deleted);
+        PruneSubcommand::Cache { full } => {
+            if full {
+                println!("Performing FULL prune of global store...");
+                let root = store.get_root();
+                let metadata_dir = root.join("metadata");
+                let objects_dir = root.join("objects");
+                
+                if metadata_dir.exists() {
+                    let _ = std::fs::remove_dir_all(&metadata_dir);
+                    let _ = std::fs::create_dir_all(&metadata_dir);
+                }
+                if objects_dir.exists() {
+                    let _ = std::fs::remove_dir_all(&objects_dir);
+                    let _ = std::fs::create_dir_all(&objects_dir);
+                }
+                println!("Global store cleared.");
+            } else {
+                println!("Pruning unreferenced global store objects...");
+                let deleted = store.prune().await?;
+                println!("Cleaned up {} unreferenced objects.", deleted);
+            }
         }
-        PruneSubcommand::Deps { full: _ } => {
+        PruneSubcommand::Deps { full } => {
             let deps_dir = common::get_deps_dir();
             println!("Pruning {} directory...", deps_dir);
             if std::path::Path::new(&deps_dir).exists() {
                 std::fs::remove_dir_all(&deps_dir)?;
                 println!("Deleted local {} directory.", deps_dir);
+            }
+            if full {
+                let lock_path = std::env::current_dir()?.join("kumo.lock");
+                if lock_path.exists() {
+                    std::fs::remove_file(lock_path)?;
+                    println!("Deleted kumo.lock");
+                }
             }
         }
     }

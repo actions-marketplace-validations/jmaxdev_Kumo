@@ -48,13 +48,14 @@ pub async fn link_package(
                 if std::fs::hard_link(&src_clone, &dest_clone).is_ok() {
                     return Ok(());
                 }
-                std::fs::copy(&src_clone, &dest_clone)
-                    .map(|_| ())
-                    .map_err(|e| anyhow::anyhow!(e))
+                match std::fs::copy(&src_clone, &dest_clone) {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(anyhow::anyhow!("IO Error: {} (Source: {:?}, Dest: {:?})", e, src_clone, dest_clone)),
+                }
             })
             .await?;
 
-            result.with_context(|| format!("Failed to link/copy file from {:?} to {:?}", src, dest))
+            result.with_context(|| format!("Failed to link/copy package file"))
         });
     }
 
