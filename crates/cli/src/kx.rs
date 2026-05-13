@@ -4,7 +4,7 @@ use std::process::Command;
 
 #[derive(Parser)]
 #[command(name = "kx")]
-#[command(about = "Kumo Execute: Run binaries from node_modules/.bin", long_about = None)]
+#[command(about = "Kumo Execute: Run binaries from packages/.bin", long_about = None)]
 struct KxCli {
     binary: String,
     #[arg(trailing_var_arg = true)]

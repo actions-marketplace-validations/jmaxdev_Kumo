@@ -303,7 +303,7 @@ async fn resolve_and_install(
             kumo_core::package::link_package(store, &target_dir, &file_map).await?;
 
             if let Some(bin) = pkg.bin.as_ref() {
-                let bin_dir = std::env::current_dir()?.join("node_modules").join(".bin");
+                let bin_dir = std::env::current_dir()?.join("packages").join(".bin");
                 tokio::fs::create_dir_all(&bin_dir).await?;
 
                 match bin {
