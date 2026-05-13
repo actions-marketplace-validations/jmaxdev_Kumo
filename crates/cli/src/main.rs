@@ -699,6 +699,19 @@ async fn run_install_scripts(
                 sh
             };
 
+            // Set NODE_PATH to the deps dir so node can find other packages
+            if let Some(deps_dir) = pkg_dir.parent() {
+                command.env("NODE_PATH", deps_dir);
+
+                // Also add .bin to PATH so scripts can find local binaries
+                let bin_dir = deps_dir.join(".bin");
+                if bin_dir.exists() {
+                    let path = std::env::var("PATH").unwrap_or_default();
+                    let new_path = format!("{};{}", bin_dir.display(), path);
+                    command.env("PATH", new_path);
+                }
+            }
+
             let _ = command.current_dir(pkg_dir).status();
         }
     }

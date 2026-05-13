@@ -14,6 +14,7 @@ pub struct PackageMetadata {
     pub published_at: Option<String>,
     pub bin: Option<serde_json::Value>,
     pub scripts: Option<HashMap<String, String>>,
+    pub optional_dependencies: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -55,6 +56,8 @@ struct RegistryVersion {
     deprecated: Option<serde_json::Value>,
     scripts: Option<HashMap<String, String>>,
     bin: Option<serde_json::Value>,
+    #[serde(rename = "optionalDependencies")]
+    optional_dependencies: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -70,6 +73,7 @@ pub struct LockedPackage {
     pub dependencies: Option<HashMap<String, String>>,
     pub bin: Option<serde_json::Value>,
     pub scripts: Option<HashMap<String, String>>,
+    pub optional_dependencies: Option<HashMap<String, String>>,
 }
 
 pub struct Resolver {
@@ -191,6 +195,7 @@ impl Resolver {
             published_at,
             bin: version_data.bin.clone(),
             scripts: version_data.scripts.clone(),
+            optional_dependencies: version_data.optional_dependencies.clone(),
         })
     }
 
@@ -207,10 +212,15 @@ impl Resolver {
             let key = format!("{}@{}", metadata.name, metadata.version);
 
             if !packages.contains_key(&key) {
-                if let Some(deps) = &metadata.dependencies {
-                    for (d_name, d_range) in deps {
-                        queue.push((d_name.clone(), d_range.clone()));
+                let mut all_deps = metadata.dependencies.clone().unwrap_or_default();
+                if let Some(opt_deps) = &metadata.optional_dependencies {
+                    for (k, v) in opt_deps {
+                        all_deps.insert(k.clone(), v.clone());
                     }
+                }
+
+                for (d_name, d_range) in all_deps {
+                    queue.push((d_name.clone(), d_range.clone()));
                 }
 
                 packages.insert(
@@ -220,6 +230,7 @@ impl Resolver {
                         dependencies: metadata.dependencies.clone(),
                         bin: metadata.bin.clone(),
                         scripts: metadata.scripts.clone(),
+                        optional_dependencies: metadata.optional_dependencies.clone(),
                     },
                 );
             }
