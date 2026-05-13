@@ -1,3 +1,4 @@
 text.txt
-.sh
-.ps1
+install.ps1
+install.sh
+build.ps1
