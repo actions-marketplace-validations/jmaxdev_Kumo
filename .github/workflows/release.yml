@@ -33,8 +33,15 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
 
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+
     - name: Build Kumo
       run: cargo build --release
+      env:
+        RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
+        CARGO_INCREMENTAL: 0
+        CARGO_TERM_COLOR: always
 
     - name: Prepare Artifacts (Windows)
       if: matrix.os == 'windows-latest'

@@ -250,8 +250,21 @@ async fn resolve_and_install(
         let multi_progress = multi_progress.clone();
 
         async move {
-            let name = key.split('@').next().unwrap_or(&key);
-            let version = key.split('@').nth(1).unwrap_or("unknown");
+            let parts: Vec<&str> = key.split('@').collect();
+            let name = if key.starts_with('@') {
+                if parts.len() > 1 {
+                    format!("@{}", parts[1])
+                } else {
+                    key.clone()
+                }
+            } else {
+                parts[0].to_string()
+            };
+            let version = if key.starts_with('@') {
+                parts.get(2).unwrap_or(&"unknown").to_string()
+            } else {
+                parts.get(1).unwrap_or(&"unknown").to_string()
+            };
 
             let pb = multi_progress.insert_before(&main_pb, indicatif::ProgressBar::new_spinner());
             pb.set_style(indicatif::ProgressStyle::with_template("{spinner:.blue} {msg}").unwrap());
@@ -259,7 +272,7 @@ async fn resolve_and_install(
 
             if let Some(file_map) = store.load_index(&key).await? {
                 pb.set_message(format!("Using cache for {}...", name));
-                let target_dir = std::env::current_dir()?.join("packages").join(name);
+                let target_dir = std::env::current_dir()?.join("packages").join(&name);
                 kumo_core::package::link_package(store, &target_dir, &file_map).await?;
                 pb.finish_and_clear();
                 main_pb.inc(1);
@@ -267,7 +280,7 @@ async fn resolve_and_install(
             }
 
             let is_safe = security
-                .validate_package(name, version, None, false, None, false)
+                .validate_package(&name, &version, None, false, None, false)
                 .await?;
 
             if !is_safe {
@@ -286,7 +299,7 @@ async fn resolve_and_install(
 
             pb.set_message(format!("Linking {}...", name));
 
-            let target_dir = std::env::current_dir()?.join("packages").join(name);
+            let target_dir = std::env::current_dir()?.join("packages").join(&name);
             kumo_core::package::link_package(store, &target_dir, &file_map).await?;
 
             if let Some(bin) = pkg.bin.as_ref() {
@@ -295,7 +308,7 @@ async fn resolve_and_install(
 
                 match bin {
                     serde_json::Value::String(path) => {
-                        create_shim(&bin_dir, name, &target_dir.join(path)).await?;
+                        create_shim(&bin_dir, &name, &target_dir.join(path)).await?;
                     }
                     serde_json::Value::Object(map) => {
                         for (cmd_name, path) in map {
