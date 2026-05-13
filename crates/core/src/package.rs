@@ -29,9 +29,11 @@ pub async fn link_package(
             fs::remove_file(&dest).await.ok();
         }
 
-        fs::hard_link(&src, &dest)
-            .await
-            .with_context(|| format!("Failed to create hardlink from {:?} to {:?}", src, dest))?;
+        if fs::hard_link(&src, &dest).await.is_err() {
+            fs::copy(&src, &dest)
+                .await
+                .with_context(|| format!("Failed to copy file from {:?} to {:?}", src, dest))?;
+        }
     }
 
     Ok(())
