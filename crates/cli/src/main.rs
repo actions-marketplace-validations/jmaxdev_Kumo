@@ -1081,26 +1081,23 @@ async fn handle_update(include_pre: bool) -> Result<()> {
         .user_agent("kumo-pkg-manager")
         .build()?;
 
-    let is_pre_release = current_version.contains("-alpha") || current_version.contains("-beta") || current_version.contains("-rc");
-    let effective_include_pre = include_pre || is_pre_release;
-
-    let url = if effective_include_pre {
-        "https://api.github.com/repos/jmaxdev/kumo-pkg/releases"
+    let url = if include_pre {
+        "https://api.github.com/repos/jmaxdev/kumo/releases"
     } else {
-        "https://api.github.com/repos/jmaxdev/kumo-pkg/releases/latest"
+        "https://api.github.com/repos/jmaxdev/kumo/releases/latest"
     };
 
     let response = client.get(url).send().await?;
     
     if !response.status().is_success() {
-        if response.status() == reqwest::StatusCode::NOT_FOUND && !effective_include_pre {
+        if response.status() == reqwest::StatusCode::NOT_FOUND && !include_pre {
             anyhow::bail!("No stable release found. Try 'kumo update --pre' to check for alpha/beta versions.");
         }
         anyhow::bail!("GitHub API error ({}). Please try again later.", response.status());
     }
 
     let release_val: serde_json::Value = response.json().await?;
-    let release: serde_json::Value = if effective_include_pre {
+    let release: serde_json::Value = if include_pre {
         if let Some(arr) = release_val.as_array() {
             arr.first()
                 .cloned()
@@ -1119,7 +1116,7 @@ async fn handle_update(include_pre: bool) -> Result<()> {
     let latest_tag = release["tag_name"]
         .as_str()
         .ok_or_else(|| {
-            if !effective_include_pre {
+            if !include_pre {
                 anyhow::anyhow!("No stable release found. Use 'kumo update --pre' for latest development versions.")
             } else {
                 anyhow::anyhow!("Could not find version information in the latest release.")
@@ -1136,11 +1133,64 @@ async fn handle_update(include_pre: bool) -> Result<()> {
         "A new version is available: v{} -> v{}",
         current_version, latest_version
     );
-    println!(
-        "Download URL: {}",
-        release["html_url"].as_str().unwrap_or("")
-    );
 
+    #[cfg(target_os = "windows")]
+    let asset_name = "kumo-windows.zip";
+    #[cfg(target_os = "macos")]
+    let asset_name = "kumo-macos.tar.gz";
+    #[cfg(target_os = "linux")]
+    let asset_name = "kumo-linux.tar.gz";
+
+    let assets = release["assets"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("No assets found in release"))?;
+    let asset = assets
+        .iter()
+        .find(|a| a["name"].as_str().unwrap_or("").contains(asset_name))
+        .ok_or_else(|| anyhow::anyhow!("Could not find asset for current OS: {}", asset_name))?;
+
+    let download_url = asset["browser_download_url"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Asset download URL missing"))?;
+
+    println!("Downloading update from {}...", download_url);
+    let response = client.get(download_url).send().await?;
+    let bytes = response.bytes().await?;
+
+    let temp_dir = std::env::temp_dir().join("kumo_update");
+    std::fs::create_dir_all(&temp_dir)?;
+    
+    let bin_path = if asset_name.ends_with(".zip") {
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+        let mut file = archive.by_name("kumo.exe").or_else(|_| archive.by_name("kumo"))?;
+        let out_path = temp_dir.join(file.name());
+        let mut out_file = std::fs::File::create(&out_path)?;
+        std::io::copy(&mut file, &mut out_file)?;
+        out_path
+    } else {
+        let tar = flate2::read::GzDecoder::new(std::io::Cursor::new(bytes));
+        let mut archive = tar::Archive::new(tar);
+        let mut bin_path = None;
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+            let path = entry.path()?.to_path_buf();
+            if path.file_name().and_then(|s| s.to_str()) == Some("kumo") {
+                let out_path = temp_dir.join("kumo");
+                entry.unpack(&out_path)?;
+                bin_path = Some(out_path);
+                break;
+            }
+        }
+        bin_path.ok_or_else(|| anyhow::anyhow!("Binary 'kumo' not found in archive"))?
+    };
+
+    println!("Applying update...");
+    self_replace::self_replace(&bin_path)?;
+    
+    // Clean up
+    let _ = std::fs::remove_dir_all(&temp_dir);
+
+    println!("Successfully updated to v{}!", latest_version);
     Ok(())
 }
 
