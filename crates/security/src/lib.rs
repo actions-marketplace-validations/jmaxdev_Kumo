@@ -17,6 +17,7 @@ pub struct Policy {
     pub allowed_licenses: HashSet<String>,
     pub minimum_release_age: u64,
     pub allow_postinstall: bool,
+    pub trusted_packages: HashSet<String>,
 }
 
 impl Default for Policy {
@@ -31,6 +32,7 @@ impl Default for Policy {
                 .collect(),
             minimum_release_age: 1440,
             allow_postinstall: false,
+            trusted_packages: HashSet::new(),
         }
     }
 }
@@ -132,7 +134,10 @@ impl SecurityEngine {
             }
         }
 
-        if !self.policy.allow_postinstall && has_install_scripts {
+        if !self.policy.allow_postinstall
+            && has_install_scripts
+            && !self.policy.trusted_packages.contains(name)
+        {
             return Ok(false);
         }
 

@@ -133,6 +133,16 @@ Executes a script within the Kumo Sandbox for secure execution.
 kumo sandbox <script-path>
 ```
 
+### `config`
+Manage Kumo configuration and security policies.
+
+#### `config init`
+Generates a default `kumo.config.json` file in the current directory.
+
+```bash
+kumo config init
+```
+
 ### `update`
 Checks for and installs the latest version of the Kumo CLI from GitHub.
 

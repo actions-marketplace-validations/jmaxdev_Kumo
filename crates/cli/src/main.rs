@@ -51,6 +51,10 @@ enum Commands {
     Explain {
         name: String,
     },
+    Config {
+        #[command(subcommand)]
+        subcommand: ConfigSubcommand,
+    },
     Workspaces,
     Patch {
         name: String,
@@ -75,6 +79,11 @@ enum PruneSubcommand {
         #[arg(long)]
         full: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum ConfigSubcommand {
+    Init,
 }
 
 mod common;
@@ -158,12 +167,18 @@ async fn main() -> Result<()> {
                 serde_json::from_str(&std::fs::read_to_string(&config_path)?)?;
 
             let mut removed = false;
-            if let Some(deps) = config_content.get_mut("dependencies").and_then(|v| v.as_object_mut()) {
+            if let Some(deps) = config_content
+                .get_mut("dependencies")
+                .and_then(|v| v.as_object_mut())
+            {
                 if deps.remove(&name).is_some() {
                     removed = true;
                 }
             }
-            if let Some(deps) = config_content.get_mut("devDependencies").and_then(|v| v.as_object_mut()) {
+            if let Some(deps) = config_content
+                .get_mut("devDependencies")
+                .and_then(|v| v.as_object_mut())
+            {
                 if deps.remove(&name).is_some() {
                     removed = true;
                 }
@@ -175,7 +190,11 @@ async fn main() -> Result<()> {
                 // Save updated config
                 let json = serde_json::to_string_pretty(&config_content)?;
                 std::fs::write(&config_path, json)?;
-                println!("Removed {} from {}", name, config_path.file_name().unwrap().to_string_lossy());
+                println!(
+                    "Removed {} from {}",
+                    name,
+                    config_path.file_name().unwrap().to_string_lossy()
+                );
 
                 // Remove from local directory
                 let deps_dir = common::get_deps_dir();
@@ -187,18 +206,24 @@ async fn main() -> Result<()> {
                 // Re-resolve and update lockfile
                 println!("Updating lockfile and cleaning up...");
                 let mut deps = HashMap::new();
-                if let Some(d) = config_content.get("dependencies").and_then(|v| v.as_object()) {
+                if let Some(d) = config_content
+                    .get("dependencies")
+                    .and_then(|v| v.as_object())
+                {
                     for (k, v) in d {
                         deps.insert(k.clone(), v.as_str().unwrap_or("latest").to_string());
                     }
                 }
-                if let Some(d) = config_content.get("devDependencies").and_then(|v| v.as_object()) {
+                if let Some(d) = config_content
+                    .get("devDependencies")
+                    .and_then(|v| v.as_object())
+                {
                     for (k, v) in d {
                         deps.insert(k.clone(), v.as_str().unwrap_or("latest").to_string());
                     }
                 }
 
-                // We need to clean the deps dir first if we want a clean state, 
+                // We need to clean the deps dir first if we want a clean state,
                 // or just let resolve_and_install do its thing (but it won't delete orphans)
                 // For now, let's just re-install.
                 resolve_and_install(&store, &resolver, &security, deps, false).await?;
@@ -293,6 +318,19 @@ async fn main() -> Result<()> {
         Commands::Update => {
             handle_update().await?;
         }
+        Commands::Config { subcommand } => match subcommand {
+            ConfigSubcommand::Init => {
+                let config_path = std::env::current_dir()?.join("kumo.config.json");
+                if config_path.exists() {
+                    anyhow::bail!("kumo.config.json already exists");
+                }
+
+                let policy = security::Policy::default();
+                let json = serde_json::to_string_pretty(&policy)?;
+                std::fs::write(config_path, json)?;
+                println!("Created kumo.config.json with default security policies.");
+            }
+        },
         Commands::External(args) => {
             if args.is_empty() {
                 anyhow::bail!("No script specified");
@@ -396,7 +434,8 @@ async fn resolve_and_install(
             };
 
             let pb = if show_logs {
-                let pb = multi_progress.insert_before(&main_pb, indicatif::ProgressBar::new_spinner());
+                let pb =
+                    multi_progress.insert_before(&main_pb, indicatif::ProgressBar::new_spinner());
                 pb.set_style(
                     indicatif::ProgressStyle::with_template("{spinner:.blue} {msg}").unwrap(),
                 );
@@ -412,7 +451,12 @@ async fn resolve_and_install(
                 }
                 let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
                 kumo_core::package::link_package(store, &target_dir, &file_map).await?;
-                
+
+                // Run install scripts if any
+                if let Some(scripts) = pkg.scripts.as_ref() {
+                    let _ = run_install_scripts(&target_dir, scripts).await;
+                }
+
                 // Still need to create shims for cached packages!
                 if let Some(bin) = pkg.bin.as_ref() {
                     let bin_dir = std::env::current_dir()?.join(&deps_dir_name).join(".bin");
@@ -420,12 +464,21 @@ async fn resolve_and_install(
 
                     match bin {
                         serde_json::Value::String(path) => {
-                            create_shim(&bin_dir, &name, &target_dir.join(path)).await?;
+                            // For scoped packages like @scope/pkg, if bin is a string,
+                            // the binary name should be just 'pkg'
+                            let bin_name = if name.contains(std::path::MAIN_SEPARATOR) {
+                                name.split(std::path::MAIN_SEPARATOR)
+                                    .last()
+                                    .unwrap_or(&name)
+                            } else {
+                                &name
+                            };
+                            create_shim(&bin_dir, bin_name, &target_dir.join(path)).await?;
                         }
                         serde_json::Value::Object(map) => {
                             for (cmd_name, path) in map {
                                 if let Some(p) = path.as_str() {
-                                    create_shim(&bin_dir, &cmd_name, &target_dir.join(p)).await?;
+                                    create_shim(&bin_dir, cmd_name, &target_dir.join(p)).await?;
                                 }
                             }
                         }
@@ -440,8 +493,21 @@ async fn resolve_and_install(
                 return Ok::<(), anyhow::Error>(());
             }
 
+            let has_scripts = pkg.scripts.as_ref().map_or(false, |s| {
+                s.contains_key("preinstall")
+                    || s.contains_key("install")
+                    || s.contains_key("postinstall")
+            });
+
             let is_safe = security
-                .validate_package(&name, &version, None, false, None, false)
+                .validate_package(
+                    &name,
+                    &version,
+                    None,  // license
+                    false, // is_deprecated (should fetch from metadata if available)
+                    None,  // published_at
+                    has_scripts,
+                )
                 .await?;
 
             if !is_safe {
@@ -471,18 +537,30 @@ async fn resolve_and_install(
             let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
             kumo_core::package::link_package(store, &target_dir, &file_map).await?;
 
+            // Run install scripts if any
+            if let Some(scripts) = pkg.scripts.as_ref() {
+                let _ = run_install_scripts(&target_dir, scripts).await;
+            }
+
             if let Some(bin) = pkg.bin.as_ref() {
                 let bin_dir = std::env::current_dir()?.join(&deps_dir_name).join(".bin");
                 tokio::fs::create_dir_all(&bin_dir).await?;
 
                 match bin {
                     serde_json::Value::String(path) => {
-                        create_shim(&bin_dir, &name, &target_dir.join(path)).await?;
+                        let bin_name = if name.contains(std::path::MAIN_SEPARATOR) {
+                            name.split(std::path::MAIN_SEPARATOR)
+                                .last()
+                                .unwrap_or(&name)
+                        } else {
+                            &name
+                        };
+                        create_shim(&bin_dir, bin_name, &target_dir.join(path)).await?;
                     }
                     serde_json::Value::Object(map) => {
                         for (cmd_name, path) in map {
                             if let Some(p) = path.as_str() {
-                                create_shim(&bin_dir, &cmd_name, &target_dir.join(p)).await?;
+                                create_shim(&bin_dir, cmd_name, &target_dir.join(p)).await?;
                             }
                         }
                     }
@@ -594,8 +672,36 @@ async fn create_shim(
     target: &std::path::Path,
 ) -> Result<()> {
     let shim_path = bin_dir.join(format!("{}.cmd", name));
+
+    // Ensure parent directory of the shim exists (important for scoped bin names)
+    if let Some(parent) = shim_path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+
     let content = format!("@ECHO OFF\nnode \"{}\" %*", target.display());
     tokio::fs::write(shim_path, content).await?;
+    Ok(())
+}
+
+async fn run_install_scripts(
+    pkg_dir: &std::path::Path,
+    scripts: &HashMap<String, String>,
+) -> Result<()> {
+    for script_name in &["preinstall", "install", "postinstall"] {
+        if let Some(script_content) = scripts.get(*script_name) {
+            let mut command = if cfg!(windows) {
+                let mut cmd = std::process::Command::new("cmd");
+                cmd.arg("/c").arg(script_content);
+                cmd
+            } else {
+                let mut sh = std::process::Command::new("sh");
+                sh.arg("-c").arg(script_content);
+                sh
+            };
+
+            let _ = command.current_dir(pkg_dir).status();
+        }
+    }
     Ok(())
 }
 
@@ -668,7 +774,7 @@ async fn execute_binary(name: &str, args: Vec<String>) -> Result<()> {
     };
 
     println!("Executing binary: {}", name);
-    
+
     let mut command = std::process::Command::new(&exe);
     command.args(args);
 
@@ -678,7 +784,7 @@ async fn execute_binary(name: &str, args: Vec<String>) -> Result<()> {
     } else {
         bin_dir.display().to_string()
     };
-    
+
     let mut child = command.env("PATH", new_path).spawn()?;
 
     child.wait()?;

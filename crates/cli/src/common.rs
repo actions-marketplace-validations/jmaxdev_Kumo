@@ -13,7 +13,14 @@ pub async fn init_components() -> Result<(Store, SecurityEngine, Resolver)> {
     let store = Store::new(store_path);
     store.init().await?;
 
-    let policy = Policy::default();
+    let config_path = std::env::current_dir()?.join("kumo.config.json");
+    let policy = if config_path.exists() {
+        let content = std::fs::read_to_string(config_path)?;
+        serde_json::from_str(&content)?
+    } else {
+        Policy::default()
+    };
+
     let security = SecurityEngine::new(policy);
     let resolver = Resolver::new();
 

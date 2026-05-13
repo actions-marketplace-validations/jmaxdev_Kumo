@@ -12,8 +12,8 @@ pub struct PackageMetadata {
     pub license: Option<String>,
     pub deprecated: Option<String>,
     pub published_at: Option<String>,
-    pub has_install_scripts: bool,
     pub bin: Option<serde_json::Value>,
+    pub scripts: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -69,6 +69,7 @@ pub struct LockedPackage {
     pub resolution: TarballInfo,
     pub dependencies: Option<HashMap<String, String>>,
     pub bin: Option<serde_json::Value>,
+    pub scripts: Option<HashMap<String, String>>,
 }
 
 pub struct Resolver {
@@ -162,12 +163,6 @@ impl Resolver {
             .and_then(|t| t.get(&version_str))
             .cloned();
 
-        let has_install_scripts = version_data.scripts.as_ref().map_or(false, |s| {
-            s.contains_key("preinstall")
-                || s.contains_key("install")
-                || s.contains_key("postinstall")
-        });
-
         let license = version_data.license.as_ref().and_then(|l| {
             if let Some(s) = l.as_str() {
                 Some(s.to_string())
@@ -194,8 +189,8 @@ impl Resolver {
             license,
             deprecated,
             published_at,
-            has_install_scripts,
             bin: version_data.bin.clone(),
+            scripts: version_data.scripts.clone(),
         })
     }
 
@@ -224,6 +219,7 @@ impl Resolver {
                         resolution: metadata.dist.clone(),
                         dependencies: metadata.dependencies.clone(),
                         bin: metadata.bin.clone(),
+                        scripts: metadata.scripts.clone(),
                     },
                 );
             }
