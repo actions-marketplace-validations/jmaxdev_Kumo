@@ -452,10 +452,7 @@ async fn resolve_and_install(
                 let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
                 kumo_core::package::link_package(store, &target_dir, &file_map).await?;
 
-                // Run install scripts if any
-                if let Some(scripts) = pkg.scripts.as_ref() {
-                    let _ = run_install_scripts(&target_dir, scripts).await;
-                }
+                kumo_core::package::link_package(store, &target_dir, &file_map).await?;
 
                 // Still need to create shims for cached packages!
                 if let Some(bin) = pkg.bin.as_ref() {
@@ -537,9 +534,8 @@ async fn resolve_and_install(
             let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
             kumo_core::package::link_package(store, &target_dir, &file_map).await?;
 
-            // Run install scripts if any
             if let Some(scripts) = pkg.scripts.as_ref() {
-                let _ = run_install_scripts(&target_dir, scripts).await;
+                // We'll run scripts later
             }
 
             if let Some(bin) = pkg.bin.as_ref() {
@@ -581,6 +577,25 @@ async fn resolve_and_install(
 
     main_pb.finish_with_message("Done!");
     println!("Installed {} packages.", lockfile.packages.len());
+
+    // --- NEW PHASE: Run install scripts in order ---
+    println!("Running lifecycle scripts...");
+    for (key, pkg) in &lockfile.packages {
+        if let Some(scripts) = &pkg.scripts {
+            let parts: Vec<&str> = key.split('@').collect();
+            let name = if key.starts_with('@') {
+                format!("@{}", parts[1])
+            } else {
+                parts[0].to_string()
+            };
+            let name = name.replace('/', std::path::MAIN_SEPARATOR_STR);
+            let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
+            
+            if !scripts.is_empty() {
+                let _ = run_install_scripts(&target_dir, scripts).await;
+            }
+        }
+    }
     let total_bytes: u64 = lockfile
         .packages
         .values()
