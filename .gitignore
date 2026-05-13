@@ -1,3 +1,5 @@
 text.txt
 build.ps1
 target
+prepare_benchmark.ps1
+benchmark.ps1

@@ -390,7 +390,7 @@ async fn resolve_and_install(
         winners.insert(name.clone(), format!("{}@{}", name, version));
     }
     
-    // 2. For transient dependencies, the latest version wins
+    // 2. For transient dependencies, the latest version wins (unless it's a direct dep)
     for key in lockfile.packages.keys() {
         let parts: Vec<&str> = key.split('@').collect();
         let name = if key.starts_with('@') {
@@ -398,33 +398,36 @@ async fn resolve_and_install(
         } else {
             parts[0].to_string()
         };
+
+        // If it's a direct dependency, it already won its slot in step 1 and cannot be replaced
+        if lockfile.dependencies.contains_key(&name) {
+            continue;
+        }
+
+        let version = if key.starts_with('@') {
+            parts.get(2).unwrap_or(&"0.0.0").to_string()
+        } else {
+            parts.get(1).unwrap_or(&"0.0.0").to_string()
+        };
         
-        if !winners.contains_key(&name) {
-            let version = if key.starts_with('@') {
-                parts.get(2).unwrap_or(&"0.0.0").to_string()
+        let current_winner_key = winners.get(&name);
+        let should_update = if let Some(winner_key) = current_winner_key {
+            let winner_parts: Vec<&str> = winner_key.split('@').collect();
+            let winner_version = if winner_key.starts_with('@') {
+                winner_parts.get(2).unwrap_or(&"0.0.0").to_string()
             } else {
-                parts.get(1).unwrap_or(&"0.0.0").to_string()
+                winner_parts.get(1).unwrap_or(&"0.0.0").to_string()
             };
             
-            let current_winner_key = winners.get(&name);
-            let should_update = if let Some(winner_key) = current_winner_key {
-                let winner_parts: Vec<&str> = winner_key.split('@').collect();
-                let winner_version = if winner_key.starts_with('@') {
-                    winner_parts.get(2).unwrap_or(&"0.0.0").to_string()
-                } else {
-                    winner_parts.get(1).unwrap_or(&"0.0.0").to_string()
-                };
-                
-                let v_new = semver::Version::parse(&version).unwrap_or_else(|_| semver::Version::new(0, 0, 0));
-                let v_old = semver::Version::parse(&winner_version).unwrap_or_else(|_| semver::Version::new(0, 0, 0));
-                v_new > v_old
-            } else {
-                true
-            };
-            
-            if should_update {
-                winners.insert(name.clone(), key.clone());
-            }
+            let v_new = semver::Version::parse(&version).unwrap_or_else(|_| semver::Version::new(0, 0, 0));
+            let v_old = semver::Version::parse(&winner_version).unwrap_or_else(|_| semver::Version::new(0, 0, 0));
+            v_new > v_old
+        } else {
+            true
+        };
+        
+        if should_update {
+            winners.insert(name.clone(), key.clone());
         }
     }
 
