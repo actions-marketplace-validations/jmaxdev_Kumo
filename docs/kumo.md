@@ -22,22 +22,37 @@ Kumo automatically detects where to link your dependencies:
 
 ## Commands
 
-### `install`
+### `install` (alias: `i`)
 Installs dependencies from `kumo.json` or `package.json`. It resolves the full dependency tree, generates a `kumo.lock` file, and links packages into the project's dependency directory (detected automatically as `node_modules` or `dependencies`).
 
+- `--log`: Shows detailed progress for each package (resolving, caching, downloading, linking).
+
 ```bash
-kumo install
+kumo install [--log]
+kumo i
 ```
 
-### `add <name>`
+### `add <name>` (alias: `a`)
 Adds a new package to the project.
 
 - `<name>`: The name of the package to add.
 - `-d, --dev`: Adds the package as a development dependency.
 - `-g, --global`: Installs the package globally.
+- `--log`: Shows detailed progress for the package and its dependencies.
 
 ```bash
-kumo add <package-name> [--dev] [--global]
+kumo add <package-name> [--dev] [--global] [--log]
+kumo a <package-name>
+```
+
+### `remove <name>` (alias: `rm`, `un`, `uninstall`)
+Removes a package from the project. It updates `kumo.json` or `package.json`, deletes the local package folder, and updates the `kumo.lock` file.
+
+- `<name>`: The name of the package to remove.
+
+```bash
+kumo remove <package-name>
+kumo rm <package-name>
 ```
 
 ### `scan`
@@ -47,7 +62,7 @@ Scans project dependencies for known vulnerabilities using the Kumo Security Eng
 kumo scan
 ```
 
-### `stats`
+### `stats` (alias: `st`)
 Shows statistics about the Kumo store, including the number of unique packages, unique files, and disk usage.
 
 ```bash
@@ -69,14 +84,14 @@ kumo prune cache
 kumo prune deps [--full]
 ```
 
-### `doctor`
+### `doctor` (alias: `dr`)
 Runs a health check on the store to detect and report corrupted files.
 
 ```bash
 kumo doctor
 ```
 
-### `explain <name>`
+### `explain <name>` (alias: `ex`)
 Explains why a package is present in the dependency tree by showing which other packages depend on it.
 
 ```bash

@@ -17,10 +17,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    #[command(alias = "i")]
     Install {
         #[arg(long)]
         log: bool,
     },
+    #[command(alias = "a")]
     Add {
         name: String,
         #[arg(short, long)]
@@ -30,13 +32,22 @@ enum Commands {
         #[arg(long)]
         log: bool,
     },
+    #[command(alias = "rm")]
+    #[command(alias = "un")]
+    #[command(alias = "uninstall")]
+    Remove {
+        name: String,
+    },
     Scan,
+    #[command(alias = "st")]
     Stats,
     Prune {
         #[command(subcommand)]
         subcommand: PruneSubcommand,
     },
+    #[command(alias = "dr")]
     Doctor,
+    #[command(alias = "ex")]
     Explain {
         name: String,
     },
@@ -128,6 +139,69 @@ async fn main() -> Result<()> {
                 if dev {
                     println!("(Added to devDependencies - package.json update not implemented)");
                 }
+            }
+        }
+        Commands::Remove { name } => {
+            println!("Removing {}...", name);
+            let kumo_json_path = std::env::current_dir()?.join("kumo.json");
+            let pkg_json_path = std::env::current_dir()?.join("package.json");
+
+            let config_path = if kumo_json_path.exists() {
+                kumo_json_path
+            } else if pkg_json_path.exists() {
+                pkg_json_path
+            } else {
+                anyhow::bail!("Neither kumo.json nor package.json found in current directory");
+            };
+
+            let mut config_content: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&config_path)?)?;
+
+            let mut removed = false;
+            if let Some(deps) = config_content.get_mut("dependencies").and_then(|v| v.as_object_mut()) {
+                if deps.remove(&name).is_some() {
+                    removed = true;
+                }
+            }
+            if let Some(deps) = config_content.get_mut("devDependencies").and_then(|v| v.as_object_mut()) {
+                if deps.remove(&name).is_some() {
+                    removed = true;
+                }
+            }
+
+            if !removed {
+                println!("Package {} not found in dependencies.", name);
+            } else {
+                // Save updated config
+                let json = serde_json::to_string_pretty(&config_content)?;
+                std::fs::write(&config_path, json)?;
+                println!("Removed {} from {}", name, config_path.file_name().unwrap().to_string_lossy());
+
+                // Remove from local directory
+                let deps_dir = common::get_deps_dir();
+                let pkg_dir = std::env::current_dir()?.join(&deps_dir).join(&name);
+                if pkg_dir.exists() {
+                    let _ = std::fs::remove_dir_all(&pkg_dir);
+                }
+
+                // Re-resolve and update lockfile
+                println!("Updating lockfile and cleaning up...");
+                let mut deps = HashMap::new();
+                if let Some(d) = config_content.get("dependencies").and_then(|v| v.as_object()) {
+                    for (k, v) in d {
+                        deps.insert(k.clone(), v.as_str().unwrap_or("latest").to_string());
+                    }
+                }
+                if let Some(d) = config_content.get("devDependencies").and_then(|v| v.as_object()) {
+                    for (k, v) in d {
+                        deps.insert(k.clone(), v.as_str().unwrap_or("latest").to_string());
+                    }
+                }
+
+                // We need to clean the deps dir first if we want a clean state, 
+                // or just let resolve_and_install do its thing (but it won't delete orphans)
+                // For now, let's just re-install.
+                resolve_and_install(&store, &resolver, &security, deps, false).await?;
             }
         }
         Commands::Scan => {
@@ -527,19 +601,28 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
     {
         println!("Running script: {} ({})", name, script);
 
-        let mut child = std::process::Command::new("powershell")
-            .arg("-Command")
-            .arg(format!("{} {}", script, args.join(" ")))
-            .env(
-                "PATH",
-                format!(
-                    "{}\\{}\\.bin;{}",
-                    std::env::current_dir()?.display(),
-                    common::get_deps_dir(),
-                    std::env::var("PATH").unwrap_or_default()
-                ),
-            )
-            .spawn()?;
+        let bin_path = std::env::current_dir()?
+            .join(common::get_deps_dir())
+            .join(".bin");
+
+        let mut command = if cfg!(windows) {
+            let mut cmd = std::process::Command::new("cmd");
+            cmd.arg("/c").arg(format!("{} {}", script, args.join(" ")));
+            cmd
+        } else {
+            let mut sh = std::process::Command::new("sh");
+            sh.arg("-c").arg(format!("{} {}", script, args.join(" ")));
+            sh
+        };
+
+        let new_path = if let Ok(existing_path) = std::env::var("PATH") {
+            let sep = if cfg!(windows) { ";" } else { ":" };
+            format!("{}{}{}", bin_path.display(), sep, existing_path)
+        } else {
+            bin_path.display().to_string()
+        };
+
+        let mut child = command.env("PATH", new_path).spawn()?;
 
         child.wait()?;
         Ok(())
@@ -564,7 +647,18 @@ async fn execute_binary(name: &str, args: Vec<String>) -> Result<()> {
     };
 
     println!("Executing binary: {}", name);
-    let mut child = std::process::Command::new(&exe).args(args).spawn()?;
+    
+    let mut command = std::process::Command::new(&exe);
+    command.args(args);
+
+    let new_path = if let Ok(existing_path) = std::env::var("PATH") {
+        let sep = if cfg!(windows) { ";" } else { ":" };
+        format!("{}{}{}", bin_dir.display(), sep, existing_path)
+    } else {
+        bin_dir.display().to_string()
+    };
+    
+    let mut child = command.env("PATH", new_path).spawn()?;
 
     child.wait()?;
     Ok(())
