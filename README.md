@@ -49,14 +49,24 @@ kumo add express
 kumo install
 ```
 
+### Update Kumo
+Keep your installation up to date with the latest security features and performance improvements:
+```bash
+kumo update
+```
+
 ### Security Policies
 Kumo uses a policy engine to determine if a package is safe. The default policy:
 - Blocks **deprecated** packages.
 - Blocks packages with **High/Critical** vulnerabilities.
 - Only allows **MIT, Apache-2.0, ISC, BSD** licenses.
 
-## Architecture
-- `crates/core`: CAS Store and Linking logic.
-- `crates/security`: Policy enforcement engine.
-- `crates/resolver`: npm registry client and version resolution.
-- `crates/cli`: User interface.
+## Maintenance
+
+### Bumping Versions & Releasing
+To release a new version (this will update versions, commit, tag, and push to GitHub):
+```bash
+node scripts/bump.js patch  # Auto release v0.1.x
+node scripts/bump.js minor  # Auto release v0.x.0
+node scripts/bump.js major  # Auto release v1.0.0
+```

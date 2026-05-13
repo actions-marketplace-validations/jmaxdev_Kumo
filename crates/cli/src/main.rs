@@ -8,6 +8,7 @@ use std::collections::HashMap;
 
 #[derive(Parser)]
 #[command(name = "kumo")]
+#[command(version)]
 #[command(about = "A security-first, space-efficient package manager", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -56,6 +57,9 @@ enum Commands {
 
     /// Execute a script in a restricted environment
     Sandbox { script: String },
+
+    /// Check for updates and install the latest version
+    Update,
 
     /// Run a script defined in package.json
     #[command(external_subcommand)]
@@ -212,6 +216,9 @@ async fn main() -> Result<()> {
             println!("🛡️ Executing '{}' in Kumo Sandbox...", script);
             // In a real implementation, we would use OS-level isolation (e.g. Jail/Namespaces/AppContainer)
             run_script(&script, vec![]).await?;
+        }
+        Commands::Update => {
+            handle_update().await?;
         }
         Commands::External(args) => {
             if args.is_empty() {
@@ -644,5 +651,117 @@ async fn generate_graph() -> Result<()> {
 
     println!("```\n");
     println!("💡 Copy the code above into any Mermaid-compatible viewer (like GitHub or Notion).");
+    Ok(())
+}
+
+async fn handle_update() -> Result<()> {
+    let current_version = env!("CARGO_PKG_VERSION");
+    println!(
+        "🚀 Checking for updates... (Current version: {})",
+        current_version
+    );
+
+    let client = reqwest::Client::builder()
+        .user_agent("kumo-pkg-updater")
+        .build()?;
+
+    let release: serde_json::Value = client
+        .get("https://api.github.com/repos/jmaxdev/Kumo/releases/latest")
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    let latest_tag = release["tag_name"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Could not find latest version tag"))?;
+    let latest_version = latest_tag.trim_start_matches('v');
+
+    let current_semver = semver::Version::parse(current_version)?;
+    let latest_semver = semver::Version::parse(latest_version)?;
+
+    if latest_semver > current_semver {
+        println!("✨ A new version is available: {}!", latest_tag);
+
+        let os = std::env::consts::OS;
+        let asset_name = match os {
+            "windows" => "kumo-windows.zip",
+            "linux" => "kumo-linux.tar.gz",
+            "macos" => "kumo-macos.tar.gz",
+            _ => anyhow::bail!("Unsupported OS for auto-update"),
+        };
+
+        let asset = release["assets"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("No assets found in latest release"))?
+            .iter()
+            .find(|a| a["name"] == asset_name)
+            .ok_or_else(|| anyhow::anyhow!("Could not find asset for your OS: {}", asset_name))?;
+
+        let download_url = asset["browser_download_url"].as_str().unwrap();
+
+        println!("📥 Downloading update from {}...", download_url);
+        let response = client.get(download_url).send().await?;
+        let bytes = response.bytes().await?;
+
+        // Handle extraction based on file type
+        let tmp_dir = std::env::temp_dir().join("kumo_update");
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        std::fs::create_dir_all(&tmp_dir)?;
+
+        let exe_name = if os == "windows" { "kumo.exe" } else { "kumo" };
+        let kx_name = if os == "windows" { "kx.exe" } else { "kx" };
+        let exe_path = tmp_dir.join(exe_name);
+        let kx_path = tmp_dir.join(kx_name);
+
+        if asset_name.ends_with(".zip") {
+            let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+            for i in 0..archive.len() {
+                let mut file = archive.by_index(i)?;
+                if file.name().ends_with(exe_name) {
+                    let mut out = std::fs::File::create(&exe_path)?;
+                    std::io::copy(&mut file, &mut out)?;
+                } else if file.name().ends_with(kx_name) {
+                    let mut out = std::fs::File::create(&kx_path)?;
+                    std::io::copy(&mut file, &mut out)?;
+                }
+            }
+        } else {
+            let tar = flate2::read::GzDecoder::new(std::io::Cursor::new(bytes));
+            let mut archive = tar::Archive::new(tar);
+            for entry in archive.entries()? {
+                let mut entry = entry?;
+                let path = entry.path()?.to_str().unwrap().to_string();
+                if path.ends_with(exe_name) {
+                    entry.unpack(&exe_path)?;
+                } else if path.ends_with(kx_name) {
+                    entry.unpack(&kx_path)?;
+                }
+            }
+        }
+
+        if !exe_path.exists() {
+            anyhow::bail!("Failed to extract kumo binary from update archive");
+        }
+
+        println!("🔄 Replacing binaries...");
+        self_replace::self_replace(&exe_path)?;
+
+        // Also try to replace kx if it exists in the same directory as kumo
+        if kx_path.exists() {
+            if let Ok(current_exe) = std::env::current_exe() {
+                let current_dir = current_exe.parent().unwrap();
+                let target_kx = current_dir.join(kx_name);
+                if target_kx.exists() {
+                    let _ = std::fs::copy(&kx_path, &target_kx);
+                }
+            }
+        }
+
+        println!("✅ Update successful! Please run 'kumo --version' to verify.");
+    } else {
+        println!("✅ Kumo is already up to date.");
+    }
+
     Ok(())
 }
