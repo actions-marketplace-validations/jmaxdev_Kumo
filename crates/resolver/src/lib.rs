@@ -106,13 +106,28 @@ impl Resolver {
                 .ok_or_else(|| anyhow!("No latest tag found for {}", name))?
                 .to_string()
         } else {
-            let req =
-                VersionReq::parse(range).map_err(|_| anyhow!("Invalid semver range: {}", range))?;
+            let reqs: Vec<VersionReq> = range
+                .split("||")
+                .map(|r| {
+                    let normalized = r
+                        .trim()
+                        .replace(">= ", ">=")
+                        .replace("<= ", "<=")
+                        .replace("> ", ">")
+                        .replace("< ", "<")
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    VersionReq::parse(&normalized)
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| anyhow!("Invalid semver range: {}", range))?;
+
             let mut versions: Vec<Version> = response
                 .versions
                 .keys()
                 .filter_map(|v| Version::parse(v).ok())
-                .filter(|v| req.matches(v))
+                .filter(|v| reqs.iter().any(|req| req.matches(v)))
                 .collect();
 
             versions.sort();
