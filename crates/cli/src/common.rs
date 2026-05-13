@@ -1,15 +1,15 @@
-use std::path::PathBuf;
 use anyhow::Result;
-use core::Store;
-use security::{SecurityEngine, Policy};
+use kumo_core::Store;
 use resolver::Resolver;
+use security::{Policy, SecurityEngine};
+use std::path::PathBuf;
 
 pub async fn init_components() -> Result<(Store, SecurityEngine, Resolver)> {
     let store_path = dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".kumo")
         .join("store");
-    
+
     let store = Store::new(store_path);
     store.init().await?;
 

@@ -1,9 +1,8 @@
-use std::path::{Path, PathBuf};
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use blake3::Hasher;
-use tokio::fs;
 use std::collections::HashMap;
-
+use std::path::{Path, PathBuf};
+use tokio::fs;
 
 pub struct Store {
     root: PathBuf,
@@ -14,13 +13,17 @@ impl Store {
         Self { root }
     }
 
+    pub fn get_root(&self) -> &Path {
+        &self.root
+    }
+
     /// Adds a file to the content-addressable store.
     /// Returns the BLAKE3 hash of the file.
     pub async fn add_file(&self, content: &[u8]) -> Result<String> {
         let mut hasher = Hasher::new();
         hasher.update(content);
         let hash = hasher.finalize().to_hex().to_string();
-        
+
         let path = self.get_path(&hash);
         if !path.exists() {
             if let Some(parent) = path.parent() {
@@ -28,19 +31,26 @@ impl Store {
             }
             fs::write(path, content).await?;
         }
-        
+
         Ok(hash)
     }
 
     /// Gets the path to a file in the store based on its hash.
     pub fn get_path(&self, hash: &str) -> PathBuf {
-        self.root.join(&hash[0..2]).join(&hash[2..])
+        self.root.join("objects").join(&hash[0..2]).join(&hash[2..])
     }
 
     /// Ensures the store directory exists.
     pub async fn init(&self) -> Result<()> {
-        fs::create_dir_all(&self.root).await.context("Failed to create store root")?;
-        fs::create_dir_all(self.root.join("metadata")).await.context("Failed to create store metadata dir")?;
+        fs::create_dir_all(&self.root)
+            .await
+            .context("Failed to create store root")?;
+        fs::create_dir_all(self.root.join("metadata"))
+            .await
+            .context("Failed to create store metadata dir")?;
+        fs::create_dir_all(self.root.join("objects"))
+            .await
+            .context("Failed to create store objects dir")?;
         Ok(())
     }
 
@@ -48,7 +58,9 @@ impl Store {
     pub async fn save_index(&self, key: &str, file_map: &HashMap<String, String>) -> Result<()> {
         let path = self.get_index_path(key);
         let json = serde_json::to_string(file_map)?;
-        fs::write(path, json).await.context("Failed to save package index")
+        fs::write(path, json)
+            .await
+            .context("Failed to save package index")
     }
 
     /// Loads a package index if it exists.
@@ -66,7 +78,8 @@ impl Store {
     fn get_index_path(&self, key: &str) -> PathBuf {
         // Sanitize key for filesystem
         let safe_key = key.replace('/', "__").replace('@', "@@");
-        self.root.join("metadata").join(format!("{}.json", safe_key))
+        self.root
+            .join("metadata")
+            .join(format!("{}.json", safe_key))
     }
 }
-

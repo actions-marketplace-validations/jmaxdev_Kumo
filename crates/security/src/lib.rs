@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,7 +25,10 @@ impl Default for Policy {
             block_deprecated: true,
             min_severity: "high".to_string(),
             blocked_packages: HashSet::new(),
-            allowed_licenses: vec!["MIT", "Apache-2.0", "ISC", "BSD-3-Clause"].into_iter().map(String::from).collect(),
+            allowed_licenses: vec!["MIT", "Apache-2.0", "ISC", "BSD-3-Clause"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
             minimum_release_age: 1440,
             allow_postinstall: false,
         }
@@ -46,7 +49,11 @@ impl SecurityEngine {
     }
 
     /// Checks if a package version has known vulnerabilities via OSV.dev
-    pub async fn check_vulnerabilities(&self, name: &str, version: &str) -> Result<Vec<Vulnerability>> {
+    pub async fn check_vulnerabilities(
+        &self,
+        name: &str,
+        version: &str,
+    ) -> Result<Vec<Vulnerability>> {
         let url = "https://api.osv.dev/v1/query";
         let body = serde_json::json!({
             "version": version,
@@ -66,23 +73,35 @@ impl SecurityEngine {
 
         if let Some(vulns) = data.get("vulns").and_then(|v| v.as_array()) {
             for v in vulns {
-                let id = v.get("id").and_then(|i| i.as_str()).unwrap_or("unknown").to_string();
-                let summary = v.get("summary").and_then(|s| s.as_str()).unwrap_or("No summary available").to_string();
+                let id = v
+                    .get("id")
+                    .and_then(|i| i.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let summary = v
+                    .get("summary")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("No summary available")
+                    .to_string();
 
                 // OSV uses CVSS, we'll try to extract it or default to "Unknown"
-                let severity = v.get("database_specific")
+                let severity = v
+                    .get("database_specific")
                     .and_then(|d| d.get("severity"))
                     .and_then(|s| s.as_str())
                     .unwrap_or("Medium")
                     .to_string();
 
-                vulnerabilities.push(Vulnerability { id, summary, severity });
+                vulnerabilities.push(Vulnerability {
+                    id,
+                    summary,
+                    severity,
+                });
             }
         }
 
         Ok(vulnerabilities)
     }
-
 
     /// Validates if a package is "safe" to install based on current policies.
     pub async fn validate_package(
@@ -109,7 +128,9 @@ impl SecurityEngine {
             if let Some(pub_at) = published_at {
                 if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(pub_at) {
                     let now = chrono::Utc::now();
-                    let age = now.signed_duration_since(dt.with_timezone(&chrono::Utc)).num_minutes();
+                    let age = now
+                        .signed_duration_since(dt.with_timezone(&chrono::Utc))
+                        .num_minutes();
                     if age < self.policy.minimum_release_age as i64 {
                         return Ok(false);
                     }
@@ -125,7 +146,9 @@ impl SecurityEngine {
 
         // 5. License check
         if let Some(lic) = license {
-            if !self.policy.allowed_licenses.is_empty() && !self.policy.allowed_licenses.contains(lic) {
+            if !self.policy.allowed_licenses.is_empty()
+                && !self.policy.allowed_licenses.contains(lic)
+            {
                 return Ok(false);
             }
         }
@@ -143,10 +166,15 @@ impl SecurityEngine {
 
     fn is_severity_blocked(&self, severity: &str) -> bool {
         let levels = ["low", "medium", "high", "critical"];
-        let min_idx = levels.iter().position(|&l| l == self.policy.min_severity).unwrap_or(2);
-        let curr_idx = levels.iter().position(|&l| l == severity.to_lowercase()).unwrap_or(0);
+        let min_idx = levels
+            .iter()
+            .position(|&l| l == self.policy.min_severity)
+            .unwrap_or(2);
+        let curr_idx = levels
+            .iter()
+            .position(|&l| l == severity.to_lowercase())
+            .unwrap_or(0);
 
         curr_idx >= min_idx
     }
 }
-
