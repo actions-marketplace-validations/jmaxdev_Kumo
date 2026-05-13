@@ -16,7 +16,9 @@ pub async fn link_package(
     }
 
     for (rel_path, hash) in file_map {
-        let dest = target_dir.join(rel_path);
+        // Normalize relative path for the current OS
+        let normalized_rel_path = rel_path.replace('/', std::path::MAIN_SEPARATOR_STR);
+        let dest = target_dir.join(normalized_rel_path);
         let src = store.get_path(hash);
 
         if let Some(parent) = dest.parent() {
@@ -26,10 +28,12 @@ pub async fn link_package(
         }
 
         if dest.exists() {
-            fs::remove_file(&dest).await.ok();
+            // Try to remove existing file to ensure we can create a new link/copy
+            let _ = fs::remove_file(&dest).await;
         }
 
         if fs::hard_link(&src, &dest).await.is_err() {
+            // Fallback to copy if hard_link fails (e.g. across different partitions)
             fs::copy(&src, &dest)
                 .await
                 .with_context(|| format!("Failed to copy file from {:?} to {:?}", src, dest))?;

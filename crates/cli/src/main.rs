@@ -51,7 +51,10 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum PruneSubcommand {
-    Cache,
+    Cache {
+        #[arg(long)]
+        full: bool,
+    },
     Deps {
         #[arg(long)]
         full: bool,
@@ -297,6 +300,9 @@ async fn resolve_and_install(
             } else {
                 parts[0].to_string()
             };
+            // Normalize name for Windows paths if it contains slashes
+            let name = name.replace('/', std::path::MAIN_SEPARATOR_STR);
+            
             let version = if key.starts_with('@') {
                 parts.get(2).unwrap_or(&"unknown").to_string()
             } else {
@@ -417,9 +423,11 @@ async fn install_global(
     println!("Downloading and linking global dependencies...");
     for (key, pkg) in &lockfile.packages {
         let pkg_name = key.split('@').next().unwrap();
+        let normalized_name = pkg_name.replace('/', std::path::MAIN_SEPARATOR_STR);
+        
         let bytes = reqwest::get(&pkg.resolution.tarball).await?.bytes().await?;
         let file_map = kumo_core::tarball::extract_and_store(store, &bytes).await?;
-        let target_dir = global_deps_dir.join(pkg_name);
+        let target_dir = global_deps_dir.join(normalized_name);
         kumo_core::package::link_package(store, &target_dir, &file_map).await?;
     }
 
@@ -563,7 +571,15 @@ async fn show_stats(store: &Store) -> Result<()> {
 
 async fn prune_store(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
     match subcommand {
-        PruneSubcommand::Cache => {
+        PruneSubcommand::Cache { full } => {
+            if full {
+                let metadata_dir = store.get_root().join("metadata");
+                if metadata_dir.exists() {
+                    tokio::fs::remove_dir_all(&metadata_dir).await?;
+                    tokio::fs::create_dir_all(&metadata_dir).await?;
+                    println!("Cleared all package metadata.");
+                }
+            }
             let count = store.prune().await?;
             println!("Removed {} orphaned files.", count);
         }
