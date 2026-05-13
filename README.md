@@ -1,4 +1,4 @@
-# Kumo Package Manager 📦🛡️
+# Kumo Package Manager
 
 Kumo is a high-performance, security-first package manager for the Node.js ecosystem, written in Rust. It focuses on disk efficiency through Content-Addressable Storage (CAS) and proactive security policy enforcement.
 

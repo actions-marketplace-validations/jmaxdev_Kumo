@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
     let cli = KxCli::parse();
     let (store, security, resolver) = common::init_components().await?;
 
-    let bin_dir = std::env::current_dir()?.join("packages").join(".bin");
+    let bin_dir = std::env::current_dir()?.join("dependencies").join(".bin");
     let bin_path = bin_dir.join(&cli.binary);
     let bin_path_cmd = bin_dir.join(format!("{}.cmd", cli.binary));
 
@@ -27,8 +27,8 @@ async fn main() -> Result<()> {
     } else if bin_path.exists() {
         bin_path
     } else {
-        println!("🎁 Package '{}' not found locally.", cli.binary);
-        print!("❓ Do you want to install and execute it using Kumo? (y/N): ");
+        println!("Package '{}' not found locally.", cli.binary);
+        print!("Do you want to install and execute it using Kumo? (y/N): ");
         use std::io::Write;
         std::io::stdout().flush()?;
 
@@ -66,7 +66,7 @@ async fn install_temp_package(
     _security: &security::SecurityEngine,
     name: &str,
 ) -> Result<std::path::PathBuf> {
-    println!("🚚 Fetching {} from registry...", name);
+    println!("Fetching {} from registry...", name);
     let metadata = resolver.resolve_package(name, "latest").await?;
 
     let response = reqwest::get(&metadata.dist.tarball).await?;

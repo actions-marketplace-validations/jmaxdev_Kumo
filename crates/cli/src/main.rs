@@ -46,7 +46,7 @@ enum Commands {
 #[derive(Subcommand)]
 enum PruneSubcommand {
     Cache,
-    Packages {
+    Deps {
         #[arg(long)]
         full: bool,
     },
@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Install => {
-            println!("🔍 Reading configuration...");
+            println!("Reading configuration...");
             let kumo_json_path = std::env::current_dir()?.join("kumo.json");
             let pkg_json_path = std::env::current_dir()?.join("package.json");
 
@@ -100,7 +100,7 @@ async fn main() -> Result<()> {
             if global {
                 install_global(&store, &resolver, &security, name).await?;
             } else {
-                println!("🔍 Adding {}...", name);
+                println!("Adding {}...", name);
                 let mut deps = HashMap::new();
                 deps.insert(name.clone(), "latest".to_string());
 
@@ -112,7 +112,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::Scan => {
-            println!("🛡️ Scanning project dependencies for vulnerabilities...");
+            println!("Scanning project dependencies for vulnerabilities...");
             let lock_path = std::env::current_dir()?.join("kumo.lock");
             if !lock_path.exists() {
                 anyhow::bail!("kumo.lock not found. Please run 'kumo install' first.");
@@ -140,7 +140,7 @@ async fn main() -> Result<()> {
                 if !vulns.is_empty() {
                     pb.suspend(|| {
                         println!(
-                            "❌ {}@{} has {} vulnerabilities!",
+                            "{}@{} has {} vulnerabilities!",
                             name,
                             version,
                             vulns.len()
@@ -158,12 +158,12 @@ async fn main() -> Result<()> {
 
             if total_vulns == 0 {
                 println!(
-                    "✅ Scan complete: No vulnerabilities found in {} packages.",
+                    "Scan complete: No vulnerabilities found in {} packages.",
                     lockfile.packages.len()
                 );
             } else {
                 println!(
-                    "⚠️ Scan complete: Found {} vulnerabilities across the dependency tree.",
+                    "Scan complete: Found {} vulnerabilities across the dependency tree.",
                     total_vulns
                 );
             }
@@ -181,25 +181,25 @@ async fn main() -> Result<()> {
             explain_package(&name).await?;
         }
         Commands::Workspaces => {
-            println!("🏗️ Kumo Workspaces: Detecting packages...");
-            println!("✅ Monorepo support enabled (found 0 local packages).");
+            println!("Kumo Workspaces: Detecting packages...");
+            println!("Monorepo support enabled (found 0 local packages).");
         }
         Commands::Patch { name } => {
-            println!("🩹 Patching package: {}...", name);
+            println!("Patching package: {}...", name);
             println!(
-                "💡 Package extracted to .kumo/patch/{}. Edit and run 'kumo patch-commit'.",
+                "Package extracted to .kumo/patch/{}. Edit and run 'kumo patch-commit'.",
                 name
             );
         }
         Commands::Timeline => {
-            println!("🕒 Project Timeline:");
+            println!("Project Timeline:");
             println!(" - Today: 0 vulnerabilities, all policies compliant.");
         }
         Commands::Graph => {
             generate_graph().await?;
         }
         Commands::Sandbox { script } => {
-            println!("🛡️ Executing '{}' in Kumo Sandbox...", script);
+            println!("Executing '{}' in Kumo Sandbox...", script);
             run_script(&script, vec![]).await?;
         }
         Commands::Update => {
@@ -224,23 +224,23 @@ async fn resolve_and_install(
     security: &SecurityEngine,
     deps: HashMap<String, String>,
 ) -> Result<()> {
-    println!("🌳 Resolving full dependency tree...");
+    println!("Resolving full dependency tree...");
     let lockfile = resolver.resolve_tree(&deps).await?;
 
     let lock_path = std::env::current_dir()?.join("kumo.lock");
     let yaml = serde_yaml::to_string(&lockfile)?;
     std::fs::write(&lock_path, yaml)?;
-    println!("📝 Generated kumo.lock");
+    println!("Generated kumo.lock");
 
     println!(
-        "📦 Downloading {} packages in parallel...",
+        "Downloading {} packages in parallel...",
         lockfile.packages.len()
     );
 
     let cpus = num_cpus::get();
     let concurrent_limit = cpus * 2;
     println!(
-        "🚀 Concurrency set to {} (based on {} CPU cores)",
+        "Concurrency set to {} (based on {} CPU cores)",
         concurrent_limit, cpus
     );
 
@@ -284,7 +284,7 @@ async fn resolve_and_install(
 
             if let Some(file_map) = store.load_index(&key).await? {
                 pb.set_message(format!("Using cache for {}...", name));
-                let target_dir = std::env::current_dir()?.join("packages").join(&name);
+                let target_dir = std::env::current_dir()?.join("dependencies").join(&name);
                 kumo_core::package::link_package(store, &target_dir, &file_map).await?;
                 pb.finish_and_clear();
                 main_pb.inc(1);
@@ -296,7 +296,7 @@ async fn resolve_and_install(
                 .await?;
 
             if !is_safe {
-                pb.finish_with_message(format!("❌ Policy violation: {}", name));
+                pb.finish_with_message(format!("Policy violation: {}", name));
                 return Err(anyhow::anyhow!("Security policy violation for {}", key));
             }
 
@@ -311,11 +311,11 @@ async fn resolve_and_install(
 
             pb.set_message(format!("Linking {}...", name));
 
-            let target_dir = std::env::current_dir()?.join("packages").join(&name);
+            let target_dir = std::env::current_dir()?.join("dependencies").join(&name);
             kumo_core::package::link_package(store, &target_dir, &file_map).await?;
 
             if let Some(bin) = pkg.bin.as_ref() {
-                let bin_dir = std::env::current_dir()?.join("packages").join(".bin");
+                let bin_dir = std::env::current_dir()?.join("dependencies").join(".bin");
                 tokio::fs::create_dir_all(&bin_dir).await?;
 
                 match bin {
@@ -342,18 +342,20 @@ async fn resolve_and_install(
 
     let results: Vec<_> = stream.buffer_unordered(concurrent_limit).collect().await;
 
-    main_pb.finish_with_message("✨ Installation complete!");
+    main_pb.finish_with_message("Done!");
+    println!("Installed {} packages.", lockfile.packages.len());
+    println!("Total size: {} MB", lockfile.packages.values().map(|p| p.resolution.size).sum::<u64>() / 1024 / 1024);
 
     let mut errors = 0;
     for res in results {
         if let Err(e) = res {
             errors += 1;
-            eprintln!("⚠️ Error: {}", e);
+            eprintln!("Error: {}", e);
         }
     }
 
     if errors > 0 {
-        println!("❌ Finished with {} errors.", errors);
+        println!("Finished with {} errors.", errors);
     }
 
     Ok(())
@@ -365,7 +367,7 @@ async fn install_global(
     _security: &SecurityEngine,
     name: String,
 ) -> Result<()> {
-    println!("🌍 Installing global package: {}...", name);
+    println!("Installing global package: {}...", name);
     let metadata = resolver.resolve_package(&name, "latest").await?;
 
     let mut deps = HashMap::new();
@@ -373,12 +375,12 @@ async fn install_global(
     let lockfile = resolver.resolve_tree(&deps).await?;
 
     let global_root = dirs::home_dir().unwrap().join(".kumo").join("global");
-    let global_packages = global_root.join("packages");
+    let global_packages = global_root.join("dependencies");
     let global_bin = global_root.join("bin");
 
     tokio::fs::create_dir_all(&global_bin).await?;
 
-    println!("📦 Downloading and linking global dependencies...");
+    println!("Downloading and linking global dependencies...");
     for (key, pkg) in &lockfile.packages {
         let pkg_name = key.split('@').next().unwrap();
         let bytes = reqwest::get(&pkg.resolution.tarball).await?.bytes().await?;
@@ -404,9 +406,9 @@ async fn install_global(
         }
     }
 
-    println!("✅ Global package {}@{} installed!", name, metadata.version);
-    println!("📍 Binaries linked in: {:?}", global_bin);
-    println!("💡 Add this directory to your PATH to use them.");
+    println!("Global package {}@{} installed!", name, metadata.version);
+    println!("Binaries linked in: {:?}", global_bin);
+    println!("Add this directory to your PATH to use them.");
     Ok(())
 }
 
@@ -442,7 +444,7 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
         .and_then(|s| s.get(name))
         .and_then(|v| v.as_str())
     {
-        println!("🚀 Running script: {} ({})", name, script);
+        println!("Running script: {} ({})", name, script);
 
         let mut child = std::process::Command::new("powershell")
             .arg("-Command")
@@ -465,7 +467,7 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
 }
 
 async fn execute_binary(name: &str, args: Vec<String>) -> Result<()> {
-    let bin_dir = std::env::current_dir()?.join("packages").join(".bin");
+    let bin_dir = std::env::current_dir()?.join("dependencies").join(".bin");
     let bin_path = bin_dir.join(name);
     let bin_path_cmd = bin_dir.join(format!("{}.cmd", name));
 
@@ -477,7 +479,7 @@ async fn execute_binary(name: &str, args: Vec<String>) -> Result<()> {
         anyhow::bail!("Command or script '{}' not found.", name);
     };
 
-    println!("🏃 Executing binary: {}", name);
+    println!("Executing binary: {}", name);
     let mut child = std::process::Command::new(&exe).args(args).spawn()?;
 
     child.wait()?;
@@ -485,9 +487,6 @@ async fn execute_binary(name: &str, args: Vec<String>) -> Result<()> {
 }
 
 async fn show_stats(store: &Store) -> Result<()> {
-    println!("📊 Kumo Global Store Statistics");
-    println!("-------------------------------");
-
     let root = store.get_root();
     let objects_dir = root.join("objects");
     let metadata_dir = root.join("metadata");
@@ -512,14 +511,14 @@ async fn show_stats(store: &Store) -> Result<()> {
         }
     }
 
-    println!("📦 Total Unique Packages: {}", package_count);
-    println!("💎 Total Unique Files: {}", object_count);
+    println!("Total Unique Packages: {}", package_count);
+    println!("Total Unique Files: {}", object_count);
     println!(
-        "💾 Store Disk Usage: {:.2} MB",
+        "Store Disk Usage: {:.2} MB",
         total_size as f64 / 1024.0 / 1024.0
     );
     println!(
-        "🚀 Estimated Space Saved: {:.2} MB",
+        "Estimated Space Saved: {:.2} MB",
         (total_size as f64 * 0.4) / 1024.0 / 1024.0
     );
     Ok(())
@@ -528,25 +527,21 @@ async fn show_stats(store: &Store) -> Result<()> {
 async fn prune_store(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
     match subcommand {
         PruneSubcommand::Cache => {
-            println!("🧹 Pruning unused packages from global store...");
             let count = store.prune().await?;
-            println!("✅ Prune complete! Removed {} orphaned files.", count);
+            println!("Removed {} orphaned files.", count);
         }
-        PruneSubcommand::Packages { full } => {
-            println!("🧹 Pruning local packages directory...");
-            let packages_dir = std::env::current_dir()?.join("packages");
+        PruneSubcommand::Deps { full } => {
+            let packages_dir = std::env::current_dir()?.join("dependencies");
             if packages_dir.exists() {
                 tokio::fs::remove_dir_all(&packages_dir).await?;
-                println!("✅ Deleted packages/ directory.");
             } else {
-                println!("💡 No packages/ directory found.");
+                println!("No dependencies/ directory found.");
             }
 
             if full {
                 let lock_path = std::env::current_dir()?.join("kumo.lock");
                 if lock_path.exists() {
                     tokio::fs::remove_file(&lock_path).await?;
-                    println!("✅ Deleted kumo.lock");
                 }
             }
         }
@@ -555,7 +550,6 @@ async fn prune_store(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
 }
 
 async fn run_doctor(store: &Store) -> Result<()> {
-    println!("🩺 Running Kumo Doctor...");
     let root = store.get_root();
     let objects_dir = root.join("objects");
 
@@ -573,7 +567,7 @@ async fn run_doctor(store: &Store) -> Result<()> {
                 let actual_hash = hasher.finalize().to_hex().to_string();
 
                 if expected_hash != actual_hash {
-                    println!("❌ Corruption detected: {}", expected_hash);
+                    println!("Corruption detected: {}", expected_hash);
                     corrupted += 1;
                 } else {
                     verified += 1;
@@ -582,20 +576,17 @@ async fn run_doctor(store: &Store) -> Result<()> {
         }
     }
 
-    println!("✅ Verified {} files.", verified);
+    println!("Verified {} files.", verified);
     if corrupted > 0 {
         println!(
-            "⚠️ Found {} corrupted files. Run 'kumo repair' (future) to fix.",
+            "Found {} corrupted files. Run 'kumo repair' (future) to fix.",
             corrupted
         );
-    } else {
-        println!("✨ Store is healthy!");
     }
     Ok(())
 }
 
 async fn explain_package(name: &str) -> Result<()> {
-    println!("🕵️ Explaining why '{}' is installed...", name);
     let lock_path = std::env::current_dir()?.join("kumo.lock");
     if !lock_path.exists() {
         anyhow::bail!("kumo.lock not found.");
@@ -608,7 +599,7 @@ async fn explain_package(name: &str) -> Result<()> {
         if key.starts_with(name)
             && (key.chars().nth(name.len()) == Some('@') || key.len() == name.len())
         {
-            println!("📦 Found: {}", key);
+            println!("Found: {}", key);
             found = true;
 
             for (parent_key, parent_pkg) in &lockfile.packages {
@@ -623,7 +614,7 @@ async fn explain_package(name: &str) -> Result<()> {
 
     if !found {
         println!(
-            "❓ Package '{}' is not in the current dependency tree.",
+            "Package '{}' is not in the current dependency tree.",
             name
         );
     }
@@ -632,7 +623,6 @@ async fn explain_package(name: &str) -> Result<()> {
 }
 
 async fn generate_graph() -> Result<()> {
-    println!("🕸️ Generating Dependency Graph (Mermaid format)...");
     let lock_path = std::env::current_dir()?.join("kumo.lock");
     if !lock_path.exists() {
         anyhow::bail!("kumo.lock not found.");
@@ -653,14 +643,14 @@ async fn generate_graph() -> Result<()> {
     }
 
     println!("```\n");
-    println!("💡 Copy the code above into any Mermaid-compatible viewer (like GitHub or Notion).");
+    println!("Copy the code above into any Mermaid-compatible viewer (like GitHub or Notion).");
     Ok(())
 }
 
 async fn handle_update() -> Result<()> {
     let current_version = env!("CARGO_PKG_VERSION");
     println!(
-        "🚀 Checking for updates... (Current version: {})",
+        "Checking for updates... (Current version: {})",
         current_version
     );
 
@@ -684,7 +674,7 @@ async fn handle_update() -> Result<()> {
     let latest_semver = semver::Version::parse(latest_version)?;
 
     if latest_semver > current_semver {
-        println!("✨ A new version is available: {}!", latest_tag);
+        println!("A new version is available: {}!", latest_tag);
 
         let os = std::env::consts::OS;
         let asset_name = match os {
@@ -703,7 +693,6 @@ async fn handle_update() -> Result<()> {
 
         let download_url = asset["browser_download_url"].as_str().unwrap();
 
-        println!("📥 Downloading update from {}...", download_url);
         let response = client.get(download_url).send().await?;
         let bytes = response.bytes().await?;
 
@@ -746,7 +735,6 @@ async fn handle_update() -> Result<()> {
             anyhow::bail!("Failed to extract kumo binary from update archive");
         }
 
-        println!("🔄 Replacing binaries...");
         self_replace::self_replace(&exe_path)?;
 
         if kx_path.exists() {
@@ -759,9 +747,9 @@ async fn handle_update() -> Result<()> {
             }
         }
 
-        println!("✅ Update successful! Please run 'kumo --version' to verify.");
+        println!("Update successful! Please run 'kumo --version' to verify.");
     } else {
-        println!("✅ Kumo is already up to date.");
+        println!("Kumo is already up to date.");
     }
 
     Ok(())

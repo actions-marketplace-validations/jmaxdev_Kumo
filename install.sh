@@ -2,7 +2,7 @@
 set -e
 
 # Kumo Installer for Linux/macOS
-echo "🚀 Installing Kumo Package Manager..."
+echo "Installing Kumo Package Manager..."
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
@@ -17,16 +17,16 @@ fi
 
 mkdir -p "$INSTALL_DIR"
 
-echo "📥 Downloading $FILENAME..."
+echo "Downloading $FILENAME..."
 curl -L "$REPO_URL/$FILENAME" -o "/tmp/$FILENAME"
 
-echo "📦 Extracting..."
+echo "Extracting..."
 tar -xzf "/tmp/$FILENAME" -C "$INSTALL_DIR"
 
 chmod +x "$INSTALL_DIR/kumo"
 chmod +x "$INSTALL_DIR/kx"
 
-echo "✨ Kumo installed successfully in $INSTALL_DIR"
+echo "Kumo installed successfully in $INSTALL_DIR"
 echo ""
-echo "💡 Add this to your .bashrc or .zshrc:"
+echo "Add this to your .bashrc or .zshrc:"
 echo "export PATH=\"\$PATH:\$HOME/.kumo/bin\""

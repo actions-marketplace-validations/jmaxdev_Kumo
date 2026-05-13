@@ -23,7 +23,7 @@ async function run() {
             output: process.stdout
         });
 
-        console.log(`📦 Kumo Version Bumper (Current: ${currentVersion})`);
+        console.log(`Kumo Version Bumper (Current: ${currentVersion})`);
         console.log('Select bump type:');
         console.log(`1) Patch (${major}.${minor}.${patch + 1})`);
         console.log(`2) Minor (${major}.${minor + 1}.0)`);
@@ -55,7 +55,7 @@ async function run() {
         newVersion = mode.startsWith('v') ? mode.slice(1) : mode;
     }
 
-    console.log(`🚀 Bumping version: ${currentVersion} -> ${newVersion}`);
+    console.log(`Bumping version: ${currentVersion} -> ${newVersion}`);
 
     const cratesDir = path.join(__dirname, '..', 'crates');
     const crates = fs.readdirSync(cratesDir);
@@ -70,24 +70,24 @@ async function run() {
         }
     });
 
-    console.log('✅ Version update complete!');
+    console.log('Version update complete!');
 
     try {
         const { execSync } = require('child_process');
-        console.log('📦 Committing and tagging...');
+        console.log('Committing and tagging...');
         
         execSync('git add .');
         execSync(`git commit -m "release: v${newVersion}"`);
         execSync(`git tag v${newVersion}`);
         
-        console.log(`📤 Pushing changes and tag v${newVersion} to origin...`);
+        console.log(`Pushing changes and tag v${newVersion} to origin...`);
         execSync('git push origin master');
         execSync(`git push origin v${newVersion}`);
         
-        console.log(`✨ Successfully released v${newVersion}! GitHub Actions will now build the artifacts.`);
+        console.log(`Successfully released v${newVersion}! GitHub Actions will now build the artifacts.`);
     } catch (error) {
-        console.warn('⚠️ Git operations failed. Please make sure you have git installed and are in a git repository.');
-        console.log(`💡 Manual steps needed:\n   git commit -am "release: v${newVersion}"\n   git tag v${newVersion}\n   git push origin v${newVersion}`);
+        console.warn('Git operations failed. Please make sure you have git installed and are in a git repository.');
+        console.log(`Manual steps needed:\n   git commit -am "release: v${newVersion}"\n   git tag v${newVersion}\n   git push origin v${newVersion}`);
     }
 }
 
