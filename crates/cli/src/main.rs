@@ -17,13 +17,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Install,
+    Install {
+        #[arg(long)]
+        log: bool,
+    },
     Add {
         name: String,
         #[arg(short, long)]
         dev: bool,
         #[arg(short, long)]
         global: bool,
+        #[arg(long)]
+        log: bool,
     },
     Scan,
     Stats,
@@ -69,7 +74,7 @@ async fn main() -> Result<()> {
     let (store, security, resolver) = common::init_components().await?;
 
     match cli.command {
-        Commands::Install => {
+        Commands::Install { log } => {
             println!("Reading configuration...");
             let kumo_json_path = std::env::current_dir()?.join("kumo.json");
             let pkg_json_path = std::env::current_dir()?.join("package.json");
@@ -103,9 +108,14 @@ async fn main() -> Result<()> {
                 }
             }
 
-            resolve_and_install(&store, &resolver, &security, deps).await?;
+            resolve_and_install(&store, &resolver, &security, deps, log).await?;
         }
-        Commands::Add { name, dev, global } => {
+        Commands::Add {
+            name,
+            dev,
+            global,
+            log,
+        } => {
             if global {
                 install_global(&store, &resolver, &security, name).await?;
             } else {
@@ -113,7 +123,7 @@ async fn main() -> Result<()> {
                 let mut deps = HashMap::new();
                 deps.insert(name.clone(), "latest".to_string());
 
-                resolve_and_install(&store, &resolver, &security, deps).await?;
+                resolve_and_install(&store, &resolver, &security, deps, log).await?;
 
                 if dev {
                     println!("(Added to devDependencies - package.json update not implemented)");
@@ -227,6 +237,7 @@ async fn resolve_and_install(
     resolver: &Resolver,
     security: &SecurityEngine,
     deps: HashMap<String, String>,
+    show_logs: bool,
 ) -> Result<()> {
     let deps_dir_name = common::get_deps_dir();
 
@@ -288,6 +299,7 @@ async fn resolve_and_install(
         let main_pb = main_pb.clone();
         let multi_progress = multi_progress.clone();
         let deps_dir_name = deps_dir_name.clone();
+        let show_logs = show_logs;
 
         async move {
             let parts: Vec<&str> = key.split('@').collect();
@@ -309,15 +321,26 @@ async fn resolve_and_install(
                 parts.get(1).unwrap_or(&"unknown").to_string()
             };
 
-            let pb = multi_progress.insert_before(&main_pb, indicatif::ProgressBar::new_spinner());
-            pb.set_style(indicatif::ProgressStyle::with_template("{spinner:.blue} {msg}").unwrap());
-            pb.set_message(format!("Resolving {}...", name));
+            let pb = if show_logs {
+                let pb = multi_progress.insert_before(&main_pb, indicatif::ProgressBar::new_spinner());
+                pb.set_style(
+                    indicatif::ProgressStyle::with_template("{spinner:.blue} {msg}").unwrap(),
+                );
+                pb.set_message(format!("Resolving {}...", name));
+                Some(pb)
+            } else {
+                None
+            };
 
             if let Some(file_map) = store.load_index(&key).await? {
-                pb.set_message(format!("Using cache for {}...", name));
+                if let Some(ref pb) = pb {
+                    pb.set_message(format!("Using cache for {}...", name));
+                }
                 let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
                 kumo_core::package::link_package(store, &target_dir, &file_map).await?;
-                pb.finish_and_clear();
+                if let Some(pb) = pb {
+                    pb.finish_and_clear();
+                }
                 main_pb.inc(1);
                 return Ok::<(), anyhow::Error>(());
             }
@@ -327,20 +350,28 @@ async fn resolve_and_install(
                 .await?;
 
             if !is_safe {
-                pb.finish_with_message(format!("Policy violation: {}", name));
+                if let Some(ref pb) = pb {
+                    pb.finish_with_message(format!("Policy violation: {}", name));
+                }
                 return Err(anyhow::anyhow!("Security policy violation for {}", key));
             }
 
-            pb.set_message(format!("Downloading {}@{}...", name, version));
+            if let Some(ref pb) = pb {
+                pb.set_message(format!("Downloading {}@{}...", name, version));
+            }
             let response = reqwest::get(&pkg.resolution.tarball).await?;
             let bytes = response.bytes().await?;
 
-            pb.set_message(format!("Extracting {}...", name));
+            if let Some(ref pb) = pb {
+                pb.set_message(format!("Extracting {}...", name));
+            }
             let file_map = kumo_core::tarball::extract_and_store(store, &bytes).await?;
 
             store.save_index(&key, &file_map).await?;
 
-            pb.set_message(format!("Linking {}...", name));
+            if let Some(ref pb) = pb {
+                pb.set_message(format!("Linking {}...", name));
+            }
 
             let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
             kumo_core::package::link_package(store, &target_dir, &file_map).await?;
@@ -364,7 +395,9 @@ async fn resolve_and_install(
                 }
             }
 
-            pb.finish_and_clear();
+            if let Some(pb) = pb {
+                pb.finish_and_clear();
+            }
 
             main_pb.inc(1);
             Ok::<(), anyhow::Error>(())
