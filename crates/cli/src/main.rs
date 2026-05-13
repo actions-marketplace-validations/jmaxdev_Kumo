@@ -1081,32 +1081,35 @@ async fn handle_update(include_pre: bool) -> Result<()> {
         .user_agent("kumo-pkg-manager")
         .build()?;
 
-    let url = if include_pre {
+    let is_pre_release = current_version.contains("-alpha") || current_version.contains("-beta") || current_version.contains("-rc");
+    let effective_include_pre = include_pre || is_pre_release;
+
+    let url = if effective_include_pre {
         "https://api.github.com/repos/jmaxdev/kumo-pkg/releases"
     } else {
         "https://api.github.com/repos/jmaxdev/kumo-pkg/releases/latest"
     };
 
     let response = client.get(url).send().await?;
+    
     if !response.status().is_success() {
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
-            anyhow::bail!("GitHub repository or release not found. If this is a private repo, ensure your environment is configured correctly.");
+        if response.status() == reqwest::StatusCode::NOT_FOUND && !effective_include_pre {
+            anyhow::bail!("No stable release found. Try 'kumo update --pre' to check for alpha/beta versions.");
         }
-        anyhow::bail!("GitHub API returned an error: {}", response.status());
+        anyhow::bail!("GitHub API error ({}). Please try again later.", response.status());
     }
 
-    let release: serde_json::Value = if include_pre {
-        let releases: serde_json::Value = response.json().await?;
-        if let Some(arr) = releases.as_array() {
+    let release_val: serde_json::Value = response.json().await?;
+    let release: serde_json::Value = if effective_include_pre {
+        if let Some(arr) = release_val.as_array() {
             arr.first()
                 .cloned()
-                .ok_or_else(|| anyhow::anyhow!("No releases found"))?
+                .ok_or_else(|| anyhow::anyhow!("No releases found in repository."))?
         } else {
-            // If it's not an array, maybe it's a single release or error
-            releases
+            release_val
         }
     } else {
-        response.json().await?
+        release_val
     };
 
     if let Some(msg) = release.get("message").and_then(|m| m.as_str()) {
@@ -1115,7 +1118,13 @@ async fn handle_update(include_pre: bool) -> Result<()> {
 
     let latest_tag = release["tag_name"]
         .as_str()
-        .ok_or_else(|| anyhow::anyhow!("No releases found or tag_name missing"))?;
+        .ok_or_else(|| {
+            if !effective_include_pre {
+                anyhow::anyhow!("No stable release found. Use 'kumo update --pre' for latest development versions.")
+            } else {
+                anyhow::anyhow!("Could not find version information in the latest release.")
+            }
+        })?;
     let latest_version = latest_tag.trim_start_matches('v');
 
     if latest_version == current_version {
