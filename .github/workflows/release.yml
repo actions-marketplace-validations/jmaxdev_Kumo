@@ -27,7 +27,7 @@ jobs:
             kx_name: kx
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -52,7 +52,7 @@ jobs:
         tar -czf ${{ matrix.artifact_name }} -C bin .
 
     - name: Upload Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.os }}-build
         path: ${{ matrix.artifact_name }}
