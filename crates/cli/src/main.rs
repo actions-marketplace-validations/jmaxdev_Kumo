@@ -1087,19 +1087,35 @@ async fn handle_update(include_pre: bool) -> Result<()> {
         "https://api.github.com/repos/jmaxdev/kumo-pkg/releases/latest"
     };
 
+    let response = client.get(url).send().await?;
+    if !response.status().is_success() {
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            anyhow::bail!("GitHub repository or release not found. If this is a private repo, ensure your environment is configured correctly.");
+        }
+        anyhow::bail!("GitHub API returned an error: {}", response.status());
+    }
+
     let release: serde_json::Value = if include_pre {
-        let releases: Vec<serde_json::Value> = client.get(url).send().await?.json().await?;
-        releases
-            .first()
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("No releases found"))?
+        let releases: serde_json::Value = response.json().await?;
+        if let Some(arr) = releases.as_array() {
+            arr.first()
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("No releases found"))?
+        } else {
+            // If it's not an array, maybe it's a single release or error
+            releases
+        }
     } else {
-        client.get(url).send().await?.json().await?
+        response.json().await?
     };
+
+    if let Some(msg) = release.get("message").and_then(|m| m.as_str()) {
+        anyhow::bail!("GitHub API Error: {}", msg);
+    }
 
     let latest_tag = release["tag_name"]
         .as_str()
-        .ok_or_else(|| anyhow::anyhow!("No tag_name found in release"))?;
+        .ok_or_else(|| anyhow::anyhow!("No releases found or tag_name missing"))?;
     let latest_version = latest_tag.trim_start_matches('v');
 
     if latest_version == current_version {
