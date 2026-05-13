@@ -106,17 +106,20 @@ async function run() {
         const { execSync } = require('child_process');
         console.log('Committing and tagging...');
         
-        const branch = execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
+        const isPreRelease = newVersion.includes('-');
+        const targetBranch = isPreRelease ? 'dev' : 'master';
 
         execSync('git add .');
         execSync(`git commit -m "release: v${newVersion}"`);
         execSync(`git tag v${newVersion}`);
         
-        console.log(`Pushing changes and tag v${newVersion} to origin/${branch}...`);
-        execSync(`git push origin ${branch}`);
+        console.log(`Pushing changes and tag v${newVersion} to origin/\x1b[35m${targetBranch}\x1b[0m...`);
+        // Push the current HEAD to the target branch
+        execSync(`git push origin HEAD:${targetBranch}`);
         execSync(`git push origin v${newVersion}`);
         
         console.log(`\n\x1b[32mSuccessfully released v${newVersion}!\x1b[0m`);
+        console.log(`Code pushed to \x1b[35m${targetBranch}\x1b[0m branch.`);
         console.log('GitHub Actions will now build the artifacts.');
     } catch (error) {
         console.warn('\x1b[31mGit operations failed.\x1b[0m Please make sure you have git installed and are in a git repository.');
