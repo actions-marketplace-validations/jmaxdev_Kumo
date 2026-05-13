@@ -13,13 +13,13 @@ Kumo is a high-performance, security-first package manager for the Node.js ecosy
 ### Windows (PowerShell)
 Run the following command in your terminal:
 ```powershell
-powershell -c "irm https://raw.githubusercontent.com/jmaxdev/Kumo/main/install.ps1 | iex"
+powershell -c "irm https://raw.githubusercontent.com/jmaxdev/Kumo/master/install.ps1 | iex"
 ```
 
 ### Linux / macOS (Bash/Zsh)
 Run the following command in your terminal:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jmaxdev/Kumo/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jmaxdev/Kumo/master/install.sh | bash
 ```
 
 ## Build from Source (Manual)
