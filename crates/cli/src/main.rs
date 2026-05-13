@@ -721,7 +721,14 @@ async fn run_install_scripts(
 
             // Set NODE_PATH to the deps dir so node can find other packages
             if let Some(deps_dir) = pkg_dir.parent() {
-                command.env("NODE_PATH", deps_dir);
+                // If it's a scoped package, the parent is the @scope dir, so we need to go up one more
+                let real_deps_dir = if deps_dir.file_name().and_then(|f| f.to_str()).map_or(false, |s| s.starts_with('@')) {
+                    deps_dir.parent().unwrap_or(deps_dir)
+                } else {
+                    deps_dir
+                };
+                
+                command.env("NODE_PATH", real_deps_dir);
                 command.env("NODE_NO_WARNINGS", "1");
 
                 // Also add .bin to PATH so scripts can find local binaries

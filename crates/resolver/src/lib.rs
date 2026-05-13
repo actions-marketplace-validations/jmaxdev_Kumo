@@ -211,8 +211,19 @@ impl Resolver {
     }
 
     fn is_compatible(os_list: &Option<Vec<String>>, cpu_list: &Option<Vec<String>>) -> bool {
-        let current_os = std::env::consts::OS;
-        let current_arch = std::env::consts::ARCH;
+        let current_os = match std::env::consts::OS {
+            "windows" => "win32",
+            "macos" => "darwin",
+            os => os,
+        };
+        let current_arch = match std::env::consts::ARCH {
+            "x86_64" => "x64",
+            "x86" => "ia32",
+            "aarch64" => "arm64",
+            "powerpc" => "ppc",
+            "powerpc64" => "ppc64",
+            arch => arch,
+        };
 
         if let Some(os) = os_list {
             if !os.is_empty() {
