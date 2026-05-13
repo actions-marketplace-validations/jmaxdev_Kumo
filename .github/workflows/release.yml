@@ -39,7 +39,6 @@ jobs:
     - name: Build Kumo
       run: cargo build --release
       env:
-        RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
         CARGO_INCREMENTAL: 0
         CARGO_TERM_COLOR: always
 
