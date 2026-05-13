@@ -532,7 +532,7 @@ async fn resolve_and_install(
             let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
             kumo_core::package::link_package(store, &target_dir, &file_map).await?;
 
-            if let Some(scripts) = pkg.scripts.as_ref() {
+            if pkg.scripts.is_some() {
                 // We'll run scripts later
             }
 
@@ -588,7 +588,6 @@ async fn resolve_and_install(
             };
             let name = name.replace('/', std::path::MAIN_SEPARATOR_STR);
             let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
-            
             if !scripts.is_empty() {
                 let _ = run_install_scripts(&target_dir, scripts).await;
             }
@@ -633,7 +632,10 @@ async fn install_global(
     name: String,
 ) -> Result<()> {
     println!("Installing global package: {}...", name);
-    let metadata = resolver.resolve_package(&name, "latest").await?;
+    let metadata = resolver
+        .clone()
+        .resolve_package(name.clone(), "latest".to_string())
+        .await?;
 
     let mut deps = HashMap::new();
     deps.insert(name.clone(), metadata.version.to_string());

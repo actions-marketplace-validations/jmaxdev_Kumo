@@ -69,7 +69,10 @@ async fn install_temp_package(
     name: &str,
 ) -> Result<std::path::PathBuf> {
     println!("Fetching {} from registry...", name);
-    let metadata = resolver.resolve_package(name, "latest").await?;
+    let metadata = resolver
+        .clone()
+        .resolve_package(name.to_string(), "latest".to_string())
+        .await?;
 
     let response = reqwest::get(&metadata.dist.tarball).await?;
     let bytes = response.bytes().await?;

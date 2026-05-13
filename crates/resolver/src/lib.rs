@@ -80,6 +80,7 @@ pub struct LockedPackage {
     pub optional_dependencies: Option<HashMap<String, String>>,
 }
 
+#[derive(Clone)]
 pub struct Resolver {
     client: reqwest::Client,
     registry_url: String,
@@ -93,7 +94,11 @@ impl Resolver {
         }
     }
 
-    pub async fn resolve_package(&self, name: &str, range: &str) -> Result<PackageMetadata> {
+    pub async fn resolve_package(self, name: String, range: String) -> Result<PackageMetadata> {
+        self.resolve_package_internal(&name, &range).await
+    }
+
+    async fn resolve_package_internal(&self, name: &str, range: &str) -> Result<PackageMetadata> {
         let cache_dir = dirs::home_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("."))
             .join(".kumo")
@@ -108,7 +113,11 @@ impl Resolver {
             let res: RegistryResponse = serde_json::from_str(&content)?;
             // If the first version in metadata is missing optional_dependencies field (as Option), 
             // it might be an old cache. We re-fetch to be sure.
-            let is_old_cache = res.versions.values().next().map_or(true, |v| v.optional_dependencies.is_none());
+            let is_old_cache = res
+                .versions
+                .values()
+                .next()
+                .map_or(true, |v| v.optional_dependencies.is_none());
             if res.versions.is_empty() || is_old_cache {
                 self.fetch_and_cache_metadata(name, &cache_path).await?
             } else {
@@ -249,13 +258,19 @@ impl Resolver {
     }
 
     pub async fn resolve_tree(&self, root_deps: &HashMap<String, String>) -> Result<Lockfile> {
+        use futures::future::BoxFuture;
         use futures::stream::{FuturesUnordered, StreamExt};
         use std::sync::{Arc, Mutex};
 
         let packages = Arc::new(Mutex::new(HashMap::new()));
         let resolved_root_deps = Arc::new(Mutex::new(HashMap::new()));
-        let queue = Arc::new(Mutex::new(root_deps.iter().map(|(k, v)| (k.clone(), v.clone())).collect::<Vec<_>>()));
-        
+        let queue = Arc::new(Mutex::new(
+            root_deps
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect::<Vec<_>>(),
+        ));
+
         let mut cache_empty = true;
         let cache_dir = dirs::home_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -264,7 +279,8 @@ impl Resolver {
             .join("metadata");
         if cache_dir.exists() {
             if let Ok(entries) = std::fs::read_dir(cache_dir) {
-                if entries.count() > 10 { // Arbitrary number to see if cache has something
+                if entries.count() > 10 {
+                    // Arbitrary number to see if cache has something
                     cache_empty = false;
                 }
             }
@@ -275,16 +291,18 @@ impl Resolver {
         }
 
         let resolver = Arc::new(self.clone());
-        let mut active_resolutions = FuturesUnordered::new();
-        
+        let mut active_resolutions: FuturesUnordered<
+            BoxFuture<'static, (String, Result<PackageMetadata>)>,
+        > = FuturesUnordered::new();
+
         // Initial batch
         let mut initial_queue = queue.lock().unwrap();
         while let Some(item) = initial_queue.pop() {
-            let r = resolver.clone();
-            active_resolutions.push(async move {
-                let res = r.resolve_package(&item.0, &item.1).await;
+            let r = (*resolver).clone();
+            active_resolutions.push(Box::pin(async move {
+                let res = r.resolve_package(item.0.clone(), item.1.clone()).await;
                 (item.0, res)
-            });
+            }));
         }
         drop(initial_queue);
 
@@ -322,23 +340,29 @@ impl Resolver {
 
                 // Queue dependencies
                 for (d_name, d_range) in all_deps {
-                    let r = resolver.clone();
-                    active_resolutions.push(async move {
-                        let res = r.resolve_package(&d_name, &d_range).await;
+                    let r = (*resolver).clone();
+                    active_resolutions.push(Box::pin(async move {
+                        let res = r.resolve_package(d_name.clone(), d_range.clone()).await;
                         (d_name, res)
-                    });
+                    }));
                 }
             } else {
                 drop(pkgs);
             }
 
             if root_deps.contains_key(&req_name) {
-                resolved_root_deps.lock().unwrap().insert(req_name, metadata.version.to_string());
+                resolved_root_deps
+                    .lock()
+                    .unwrap()
+                    .insert(req_name, metadata.version.to_string());
             }
         }
 
         let final_packages = Arc::try_unwrap(packages).unwrap().into_inner().unwrap();
-        let final_root_deps = Arc::try_unwrap(resolved_root_deps).unwrap().into_inner().unwrap();
+        let final_root_deps = Arc::try_unwrap(resolved_root_deps)
+            .unwrap()
+            .into_inner()
+            .unwrap();
 
         Ok(Lockfile {
             lockfile_version: "1.0".to_string(),
@@ -358,7 +382,10 @@ impl Resolver {
 
             match self.client.get(&url).send().await {
                 Ok(res) => {
-                    let metadata: RegistryResponse = res.json().await.with_context(|| format!("Failed to parse metadata for {}", name))?;
+                    let metadata: RegistryResponse = res
+                        .json()
+                        .await
+                        .with_context(|| format!("Failed to parse metadata for {}", name))?;
                     let json = serde_json::to_string(&metadata)?;
                     let _ = std::fs::write(cache_path, json);
                     return Ok(metadata);
@@ -369,6 +396,10 @@ impl Resolver {
             }
         }
 
-        Err(anyhow!("Failed to fetch metadata for {} after 3 attempts: {:?}", name, last_err))
+        Err(anyhow!(
+            "Failed to fetch metadata for {} after 3 attempts: {:?}",
+            name,
+            last_err
+        ))
     }
 }
