@@ -494,11 +494,6 @@ async fn resolve_and_install(
                     || s.contains_key("postinstall")
             });
 
-            // Debug optional dependencies
-            if let Some(deps) = &pkg.optional_dependencies {
-                log::debug!("Package {} has {} optional dependencies", name, deps.len());
-            }
-
             let is_safe = security
                 .validate_package(
                     &name,
