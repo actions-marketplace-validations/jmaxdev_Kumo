@@ -678,7 +678,12 @@ async fn create_shim(
         tokio::fs::create_dir_all(parent).await?;
     }
 
-    let content = format!("@ECHO OFF\nnode \"{}\" %*", target.display());
+    let deps_dir = bin_dir.parent().unwrap_or(bin_dir);
+    let content = format!(
+        "@ECHO OFF\nSET NODE_PATH={}\nnode \"{}\" %*",
+        deps_dir.display(),
+        target.display()
+    );
     tokio::fs::write(shim_path, content).await?;
     Ok(())
 }
