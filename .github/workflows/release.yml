@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        include:
+          - os: windows-latest
+            artifact_name: kumo-windows.zip
+            asset_name: kumo.exe
+            kx_name: kx.exe
+          - os: ubuntu-latest
+            artifact_name: kumo-linux.tar.gz
+            asset_name: kumo
+            kx_name: kx
+          - os: macos-latest
+            artifact_name: kumo-macos.tar.gz
+            asset_name: kumo
+            kx_name: kx
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Build Kumo
+      run: cargo build --release
+
+    - name: Prepare Artifacts (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        mkdir bin
+        cp target/release/kumo.exe bin/
+        cp target/release/kx.exe bin/
+        7z a ${{ matrix.artifact_name }} ./bin/*
+
+    - name: Prepare Artifacts (Unix)
+      if: matrix.os != 'windows-latest'
+      run: |
+        mkdir bin
+        cp target/release/kumo bin/
+        cp target/release/kx bin/
+        tar -czf ${{ matrix.artifact_name }} -C bin .
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.os }}-build
+        path: ${{ matrix.artifact_name }}

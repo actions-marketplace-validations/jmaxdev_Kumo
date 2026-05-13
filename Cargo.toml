@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "crates/cli",
+    "crates/core",
+    "crates/resolver",
+    "crates/security",
+]
+resolver = "2"
+
+[profile.release]
+opt-level = "z"     # Optimize for size
+lto = true          # Link-time optimization
+codegen-units = 1   # Better optimization, slower compile
+panic = "abort"     # Remove panic unwinding, smaller binary
+strip = true        # Automatically strip symbols
+
