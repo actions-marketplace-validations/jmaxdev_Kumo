@@ -224,6 +224,26 @@ async fn resolve_and_install(
     security: &SecurityEngine,
     deps: HashMap<String, String>,
 ) -> Result<()> {
+    let deps_dir_name = common::get_deps_dir();
+
+    if deps_dir_name == "dependencies" && !std::path::Path::new("dependencies").exists() {
+        let gitignore_path = std::env::current_dir()?.join(".gitignore");
+        if gitignore_path.exists() {
+            let content = std::fs::read_to_string(&gitignore_path)?;
+            if !content.lines().any(|l| l.trim() == "dependencies" || l.trim() == "dependencies/") {
+                println!("Adding dependencies/ to .gitignore");
+                let mut file = std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(&gitignore_path)?;
+                use std::io::Write;
+                if !content.ends_with('\n') && !content.is_empty() {
+                    writeln!(file)?;
+                }
+                writeln!(file, "dependencies/")?;
+            }
+        }
+    }
+
     println!("Resolving full dependency tree...");
     let lockfile = resolver.resolve_tree(&deps).await?;
 
@@ -284,7 +304,7 @@ async fn resolve_and_install(
 
             if let Some(file_map) = store.load_index(&key).await? {
                 pb.set_message(format!("Using cache for {}...", name));
-                let target_dir = std::env::current_dir()?.join("dependencies").join(&name);
+                let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
                 kumo_core::package::link_package(store, &target_dir, &file_map).await?;
                 pb.finish_and_clear();
                 main_pb.inc(1);
@@ -311,11 +331,11 @@ async fn resolve_and_install(
 
             pb.set_message(format!("Linking {}...", name));
 
-            let target_dir = std::env::current_dir()?.join("dependencies").join(&name);
+            let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
             kumo_core::package::link_package(store, &target_dir, &file_map).await?;
 
             if let Some(bin) = pkg.bin.as_ref() {
-                let bin_dir = std::env::current_dir()?.join("dependencies").join(".bin");
+                let bin_dir = std::env::current_dir()?.join(&deps_dir_name).join(".bin");
                 tokio::fs::create_dir_all(&bin_dir).await?;
 
                 match bin {
@@ -375,7 +395,7 @@ async fn install_global(
     let lockfile = resolver.resolve_tree(&deps).await?;
 
     let global_root = dirs::home_dir().unwrap().join(".kumo").join("global");
-    let global_packages = global_root.join("dependencies");
+    let global_deps_dir = global_root.join("dependencies");
     let global_bin = global_root.join("bin");
 
     tokio::fs::create_dir_all(&global_bin).await?;
@@ -385,19 +405,19 @@ async fn install_global(
         let pkg_name = key.split('@').next().unwrap();
         let bytes = reqwest::get(&pkg.resolution.tarball).await?.bytes().await?;
         let file_map = kumo_core::tarball::extract_and_store(store, &bytes).await?;
-        let target_dir = global_packages.join(pkg_name);
+        let target_dir = global_deps_dir.join(pkg_name);
         kumo_core::package::link_package(store, &target_dir, &file_map).await?;
     }
 
     if let Some(bin) = metadata.bin {
         match bin {
             serde_json::Value::String(path) => {
-                create_shim(&global_bin, &name, &global_packages.join(&name).join(path)).await?;
+                create_shim(&global_bin, &name, &global_deps_dir.join(&name).join(path)).await?;
             }
             serde_json::Value::Object(map) => {
                 for (cmd_name, path) in map {
                     if let Some(p) = path.as_str() {
-                        create_shim(&global_bin, &cmd_name, &global_packages.join(&name).join(p))
+                        create_shim(&global_bin, &cmd_name, &global_deps_dir.join(&name).join(p))
                             .await?;
                     }
                 }
@@ -452,8 +472,9 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
             .env(
                 "PATH",
                 format!(
-                    "{}\\packages\\.bin;{}",
+                    "{}\\{}\\.bin;{}",
                     std::env::current_dir()?.display(),
+                    common::get_deps_dir(),
                     std::env::var("PATH").unwrap_or_default()
                 ),
             )
@@ -467,7 +488,7 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
 }
 
 async fn execute_binary(name: &str, args: Vec<String>) -> Result<()> {
-    let bin_dir = std::env::current_dir()?.join("dependencies").join(".bin");
+    let bin_dir = std::env::current_dir()?.join(common::get_deps_dir()).join(".bin");
     let bin_path = bin_dir.join(name);
     let bin_path_cmd = bin_dir.join(format!("{}.cmd", name));
 
@@ -531,11 +552,12 @@ async fn prune_store(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
             println!("Removed {} orphaned files.", count);
         }
         PruneSubcommand::Deps { full } => {
-            let packages_dir = std::env::current_dir()?.join("dependencies");
-            if packages_dir.exists() {
-                tokio::fs::remove_dir_all(&packages_dir).await?;
+            let deps_dir_name = common::get_deps_dir();
+            let deps_dir = std::env::current_dir()?.join(&deps_dir_name);
+            if deps_dir.exists() {
+                tokio::fs::remove_dir_all(&deps_dir).await?;
             } else {
-                println!("No dependencies/ directory found.");
+                println!("No {}/ directory found.", deps_dir_name);
             }
 
             if full {

@@ -19,3 +19,11 @@ pub async fn init_components() -> Result<(Store, SecurityEngine, Resolver)> {
 
     Ok((store, security, resolver))
 }
+
+pub fn get_deps_dir() -> String {
+    if std::path::Path::new("node_modules").exists() {
+        "node_modules".to_string()
+    } else {
+        "dependencies".to_string()
+    }
+}

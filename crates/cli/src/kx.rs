@@ -4,7 +4,7 @@ use std::process::Command;
 
 #[derive(Parser)]
 #[command(name = "kx")]
-#[command(about = "Kumo Execute: Run binaries from packages/.bin", long_about = None)]
+#[command(about = "Kumo Execute: Run binaries from dependencies/.bin or node_modules/.bin", long_about = None)]
 struct KxCli {
     binary: String,
     #[arg(trailing_var_arg = true)]
@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
     let cli = KxCli::parse();
     let (store, security, resolver) = common::init_components().await?;
 
-    let bin_dir = std::env::current_dir()?.join("dependencies").join(".bin");
+    let bin_dir = std::env::current_dir()?.join(common::get_deps_dir()).join(".bin");
     let bin_path = bin_dir.join(&cli.binary);
     let bin_path_cmd = bin_dir.join(format!("{}.cmd", cli.binary));
 
