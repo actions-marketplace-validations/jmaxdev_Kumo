@@ -15,6 +15,8 @@ pub struct PackageMetadata {
     pub bin: Option<serde_json::Value>,
     pub scripts: Option<HashMap<String, String>>,
     pub optional_dependencies: Option<HashMap<String, String>>,
+    pub os: Option<Vec<String>>,
+    pub cpu: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -57,7 +59,9 @@ struct RegistryVersion {
     scripts: Option<HashMap<String, String>>,
     bin: Option<serde_json::Value>,
     #[serde(rename = "optionalDependencies")]
-    optional_dependencies: Option<HashMap<String, String>>,
+    pub optional_dependencies: Option<HashMap<String, String>>,
+    pub os: Option<Vec<String>>,
+    pub cpu: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -192,22 +196,111 @@ impl Resolver {
             bin: version_data.bin.clone(),
             scripts: version_data.scripts.clone(),
             optional_dependencies: version_data.optional_dependencies.clone(),
+            os: version_data.os.clone(),
+            cpu: version_data.cpu.clone(),
         })
     }
 
+    fn is_compatible(os_list: &Option<Vec<String>>, cpu_list: &Option<Vec<String>>) -> bool {
+        let current_os = std::env::consts::OS;
+        let current_arch = std::env::consts::ARCH;
+
+        if let Some(os) = os_list {
+            if !os.is_empty() {
+                let mut match_found = false;
+                let mut has_negation = false;
+                for o in os {
+                    if o.starts_with('!') {
+                        has_negation = true;
+                        if &o[1..] == current_os {
+                            return false;
+                        }
+                    } else if o == current_os {
+                        match_found = true;
+                    }
+                }
+                if !match_found && !has_negation {
+                    return false;
+                }
+            }
+        }
+
+        if let Some(cpu) = cpu_list {
+            if !cpu.is_empty() {
+                let mut match_found = false;
+                let mut has_negation = false;
+                for c in cpu {
+                    if c.starts_with('!') {
+                        has_negation = true;
+                        if &c[1..] == current_arch {
+                            return false;
+                        }
+                    } else if c == current_arch {
+                        match_found = true;
+                    }
+                }
+                if !match_found && !has_negation {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
     pub async fn resolve_tree(&self, root_deps: &HashMap<String, String>) -> Result<Lockfile> {
-        let mut packages = HashMap::new();
-        let mut resolved_root_deps = HashMap::new();
-        let mut queue: Vec<(String, String)> = root_deps
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+        use futures::stream::{FuturesUnordered, StreamExt};
+        use std::sync::{Arc, Mutex};
 
-        while let Some((name, range)) = queue.pop() {
-            let metadata = self.resolve_package(&name, &range).await?;
+        let packages = Arc::new(Mutex::new(HashMap::new()));
+        let resolved_root_deps = Arc::new(Mutex::new(HashMap::new()));
+        let queue = Arc::new(Mutex::new(root_deps.iter().map(|(k, v)| (k.clone(), v.clone())).collect::<Vec<_>>()));
+        
+        let mut cache_empty = true;
+        let cache_dir = dirs::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".kumo")
+            .join("cache")
+            .join("metadata");
+        if cache_dir.exists() {
+            if let Ok(entries) = std::fs::read_dir(cache_dir) {
+                if entries.count() > 10 { // Arbitrary number to see if cache has something
+                    cache_empty = false;
+                }
+            }
+        }
+
+        if cache_empty {
+            println!("Note: Metadata cache is empty or small. Resolution may take longer as we fetch from registry.");
+        }
+
+        let resolver = Arc::new(self.clone());
+        let mut active_resolutions = FuturesUnordered::new();
+        
+        // Initial batch
+        let mut initial_queue = queue.lock().unwrap();
+        while let Some(item) = initial_queue.pop() {
+            let r = resolver.clone();
+            active_resolutions.push(async move {
+                let res = r.resolve_package(&item.0, &item.1).await;
+                (item.0, res)
+            });
+        }
+        drop(initial_queue);
+
+        while let Some((req_name, metadata_res)) = active_resolutions.next().await {
+            let metadata = metadata_res?;
+            
+            // Check compatibility
+            if !Self::is_compatible(&metadata.os, &metadata.cpu) {
+                // Skip incompatible package
+                continue;
+            }
+
             let key = format!("{}@{}", metadata.name, metadata.version);
-
-            if !packages.contains_key(&key) {
+            
+            let mut pkgs = packages.lock().unwrap();
+            if !pkgs.contains_key(&key) {
                 let mut all_deps = metadata.dependencies.clone().unwrap_or_default();
                 if let Some(opt_deps) = &metadata.optional_dependencies {
                     for (k, v) in opt_deps {
@@ -215,11 +308,7 @@ impl Resolver {
                     }
                 }
 
-                for (d_name, d_range) in all_deps {
-                    queue.push((d_name.clone(), d_range.clone()));
-                }
-
-                packages.insert(
+                pkgs.insert(
                     key.clone(),
                     LockedPackage {
                         resolution: metadata.dist.clone(),
@@ -229,16 +318,32 @@ impl Resolver {
                         optional_dependencies: metadata.optional_dependencies.clone(),
                     },
                 );
+                drop(pkgs);
+
+                // Queue dependencies
+                for (d_name, d_range) in all_deps {
+                    let r = resolver.clone();
+                    active_resolutions.push(async move {
+                        let res = r.resolve_package(&d_name, &d_range).await;
+                        (d_name, res)
+                    });
+                }
+            } else {
+                drop(pkgs);
             }
 
-            if root_deps.contains_key(&name) {
-                resolved_root_deps.insert(name, metadata.version.to_string());
+            if root_deps.contains_key(&req_name) {
+                resolved_root_deps.lock().unwrap().insert(req_name, metadata.version.to_string());
             }
         }
+
+        let final_packages = Arc::try_unwrap(packages).unwrap().into_inner().unwrap();
+        let final_root_deps = Arc::try_unwrap(resolved_root_deps).unwrap().into_inner().unwrap();
+
         Ok(Lockfile {
             lockfile_version: "1.0".to_string(),
-            dependencies: resolved_root_deps,
-            packages,
+            dependencies: final_root_deps,
+            packages: final_packages,
         })
     }
 
