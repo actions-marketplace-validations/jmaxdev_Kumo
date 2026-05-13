@@ -1162,7 +1162,12 @@ async fn handle_update(include_pre: bool) -> Result<()> {
     
     let bin_path = if asset_name.ends_with(".zip") {
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
-        let mut file = archive.by_name("kumo.exe").or_else(|_| archive.by_name("kumo"))?;
+        let target_name = if archive.file_names().any(|n| n == "kumo.exe") {
+            "kumo.exe"
+        } else {
+            "kumo"
+        };
+        let mut file = archive.by_name(target_name)?;
         let out_path = temp_dir.join(file.name());
         let mut out_file = std::fs::File::create(&out_path)?;
         std::io::copy(&mut file, &mut out_file)?;
