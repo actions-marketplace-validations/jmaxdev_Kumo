@@ -64,7 +64,10 @@ enum Commands {
     Sandbox {
         script: String,
     },
-    Update,
+    Update {
+        #[arg(long)]
+        pre: bool,
+    },
     #[command(external_subcommand)]
     External(Vec<String>),
 }
@@ -315,8 +318,8 @@ async fn main() -> Result<()> {
             println!("Executing '{}' in Kumo Sandbox...", script);
             run_script(&script, vec![]).await?;
         }
-        Commands::Update => {
-            handle_update().await?;
+        Commands::Update { pre } => {
+            handle_update(pre).await?;
         }
         Commands::Config { subcommand } => match subcommand {
             ConfigSubcommand::Init => {
@@ -1081,7 +1084,7 @@ async fn generate_graph() -> Result<()> {
     Ok(())
 }
 
-async fn handle_update() -> Result<()> {
+async fn handle_update(include_pre: bool) -> Result<()> {
     let current_version = env!("CARGO_PKG_VERSION");
     println!(
         "Checking for updates... (Current version: {})",
@@ -1092,12 +1095,31 @@ async fn handle_update() -> Result<()> {
         .user_agent("kumo-pkg-updater")
         .build()?;
 
-    let release: serde_json::Value = client
-        .get("https://api.github.com/repos/jmaxdev/Kumo/releases/latest")
-        .send()
-        .await?
-        .json()
-        .await?;
+    let url = if include_pre {
+        "https://api.github.com/repos/jmaxdev/Kumo/releases"
+    } else {
+        "https://api.github.com/repos/jmaxdev/Kumo/releases/latest"
+    };
+
+    let release: serde_json::Value = if include_pre {
+        let releases: Vec<serde_json::Value> = client
+            .get(url)
+            .send()
+            .await?
+            .json()
+            .await?;
+        releases
+            .first()
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("No releases found"))?
+    } else {
+        client
+            .get(url)
+            .send()
+            .await?
+            .json()
+            .await?
+    };
 
     let latest_tag = release["tag_name"]
         .as_str()

@@ -83,5 +83,6 @@ jobs:
             ubuntu-latest-build/kumo-linux.tar.gz
             macos-latest-build/kumo-macos.tar.gz
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

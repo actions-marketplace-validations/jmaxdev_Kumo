@@ -11,8 +11,29 @@ if (!versionMatch) {
     process.exit(1);
 }
 
-let currentVersion = versionMatch[1];
-let [major, minor, patch] = currentVersion.split('.').map(Number);
+const currentVersion = versionMatch[1];
+// Semver regex: major.minor.patch[-prerelease]
+const semverRegex = /^(\d+)\.(\d+)\.(\d+)(?:-([\w\d.-]+))?$/;
+const match = currentVersion.match(semverRegex);
+
+if (!match) {
+    console.error(`Invalid semver version in Cargo.toml: ${currentVersion}`);
+    process.exit(1);
+}
+
+let [_, major, minor, patch, pre] = match;
+major = Number(major);
+minor = Number(minor);
+patch = Number(patch);
+
+function getNextPre(label) {
+    if (pre && pre.startsWith(label)) {
+        const parts = pre.split('.');
+        const num = parts.length > 1 ? Number(parts[1]) : 0;
+        return `${major}.${minor}.${patch}-${label}.${num + 1}`;
+    }
+    return `${major}.${minor}.${patch + 1}-${label}.1`;
+}
 
 async function run() {
     let mode = process.argv[2];
@@ -23,19 +44,25 @@ async function run() {
             output: process.stdout
         });
 
-        console.log(`Kumo Version Bumper (Current: ${currentVersion})`);
+        console.log(`\x1b[36mKumo Version Bumper\x1b[0m (Current: \x1b[33m${currentVersion}\x1b[0m)`);
         console.log('Select bump type:');
-        console.log(`1) Patch (${major}.${minor}.${patch + 1})`);
-        console.log(`2) Minor (${major}.${minor + 1}.0)`);
-        console.log(`3) Major (${major + 1}.0.0)`);
-        console.log('4) Custom Version');
+        console.log(`1) Patch  (\x1b[32m${major}.${minor}.${pre ? patch : patch + 1}\x1b[0m)${pre ? ' (Stable release)' : ''}`);
+        console.log(`2) Minor  (\x1b[32m${major}.${minor + 1}.0\x1b[0m)`);
+        console.log(`3) Major  (\x1b[32m${major + 1}.0.0\x1b[0m)`);
+        console.log(`4) Alpha  (\x1b[32m${getNextPre('alpha')}\x1b[0m) - \x1b[90mInternal testing, unstable\x1b[0m`);
+        console.log(`5) Beta   (\x1b[32m${getNextPre('beta')}\x1b[0m) - \x1b[90mFeature complete, public testing\x1b[0m`);
+        console.log(`6) RC     (\x1b[32m${getNextPre('rc')}\x1b[0m) - \x1b[90mRelease Candidate, potential final\x1b[0m`);
+        console.log('7) Custom Version');
 
         const choice = await new Promise(resolve => rl.question('Choice: ', resolve));
         
         if (choice === '1') mode = 'patch';
         else if (choice === '2') mode = 'minor';
         else if (choice === '3') mode = 'major';
-        else if (choice === '4') {
+        else if (choice === '4') mode = 'alpha';
+        else if (choice === '5') mode = 'beta';
+        else if (choice === '6') mode = 'rc';
+        else if (choice === '7') {
             mode = await new Promise(resolve => rl.question('Enter version: ', resolve));
         } else {
             console.log('Invalid choice.');
@@ -45,17 +72,20 @@ async function run() {
     }
 
     let newVersion;
-    if (mode === 'major') {
-        newVersion = `${major + 1}.0.0`;
-    } else if (mode === 'minor') {
-        newVersion = `${major}.${minor + 1}.0`;
-    } else if (mode === 'patch') {
-        newVersion = `${major}.${minor}.${patch + 1}`;
-    } else {
-        newVersion = mode.startsWith('v') ? mode.slice(1) : mode;
+    switch (mode) {
+        case 'major': newVersion = `${major + 1}.0.0`; break;
+        case 'minor': newVersion = `${major}.${minor + 1}.0`; break;
+        case 'patch': 
+            newVersion = pre ? `${major}.${minor}.${patch}` : `${major}.${minor}.${patch + 1}`; 
+            break;
+        case 'alpha': newVersion = getNextPre('alpha'); break;
+        case 'beta': newVersion = getNextPre('beta'); break;
+        case 'rc': newVersion = getNextPre('rc'); break;
+        default:
+            newVersion = mode.startsWith('v') ? mode.slice(1) : mode;
     }
 
-    console.log(`Bumping version: ${currentVersion} -> ${newVersion}`);
+    console.log(`Bumping version: \x1b[33m${currentVersion}\x1b[0m -> \x1b[32m${newVersion}\x1b[0m`);
 
     const cratesDir = path.join(__dirname, '..', 'crates');
     const crates = fs.readdirSync(cratesDir);
@@ -70,23 +100,26 @@ async function run() {
         }
     });
 
-    console.log('Version update complete!');
+    console.log('\x1b[32mVersion update complete!\x1b[0m');
 
     try {
         const { execSync } = require('child_process');
         console.log('Committing and tagging...');
         
+        const branch = execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
+
         execSync('git add .');
         execSync(`git commit -m "release: v${newVersion}"`);
         execSync(`git tag v${newVersion}`);
         
-        console.log(`Pushing changes and tag v${newVersion} to origin...`);
-        execSync('git push origin master');
+        console.log(`Pushing changes and tag v${newVersion} to origin/${branch}...`);
+        execSync(`git push origin ${branch}`);
         execSync(`git push origin v${newVersion}`);
         
-        console.log(`Successfully released v${newVersion}! GitHub Actions will now build the artifacts.`);
+        console.log(`\n\x1b[32mSuccessfully released v${newVersion}!\x1b[0m`);
+        console.log('GitHub Actions will now build the artifacts.');
     } catch (error) {
-        console.warn('Git operations failed. Please make sure you have git installed and are in a git repository.');
+        console.warn('\x1b[31mGit operations failed.\x1b[0m Please make sure you have git installed and are in a git repository.');
         console.log(`Manual steps needed:\n   git commit -am "release: v${newVersion}"\n   git tag v${newVersion}\n   git push origin v${newVersion}`);
     }
 }
