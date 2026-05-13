@@ -452,8 +452,6 @@ async fn resolve_and_install(
                 let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
                 kumo_core::package::link_package(store, &target_dir, &file_map).await?;
 
-                kumo_core::package::link_package(store, &target_dir, &file_map).await?;
-
                 // Still need to create shims for cached packages!
                 if let Some(bin) = pkg.bin.as_ref() {
                     let bin_dir = std::env::current_dir()?.join(&deps_dir_name).join(".bin");
@@ -495,6 +493,11 @@ async fn resolve_and_install(
                     || s.contains_key("install")
                     || s.contains_key("postinstall")
             });
+
+            // Debug optional dependencies
+            if let Some(deps) = &pkg.optional_dependencies {
+                log::debug!("Package {} has {} optional dependencies", name, deps.len());
+            }
 
             let is_safe = security
                 .validate_package(

@@ -102,9 +102,10 @@ impl Resolver {
         let response: RegistryResponse = if cache_path.exists() {
             let content = std::fs::read_to_string(&cache_path)?;
             let res: RegistryResponse = serde_json::from_str(&content)?;
-            // Check if it's a "full" response (from older versions it might be partial)
-            // If it's missing versions, we re-fetch
-            if res.versions.is_empty() {
+            // If the first version in metadata is missing optional_dependencies field (as Option), 
+            // it might be an old cache. We re-fetch to be sure.
+            let is_old_cache = res.versions.values().next().map_or(true, |v| v.optional_dependencies.is_none());
+            if res.versions.is_empty() || is_old_cache {
                 self.fetch_and_cache_metadata(name, &cache_path).await?
             } else {
                 res
