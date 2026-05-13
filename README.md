@@ -8,14 +8,35 @@ Kumo is a high-performance, security-first package manager for the Node.js ecosy
 - **Fast Hashing**: Powered by BLAKE3.
 - **Native Performance**: No Node.js runtime required for the package manager itself.
 
-## Installation (Build from Source)
-To build a production-ready binary:
+## Quick Installation
 
-```bash
-cargo build --release
+### Windows (PowerShell)
+Run the following command in your terminal:
+```powershell
+powershell -c "irm https://raw.githubusercontent.com/jmaxdev/Kumo/main/install.ps1 | iex"
 ```
 
-The executable will be located at `target/release/cli` (on Windows `target/release/cli.exe`). You can rename it to `kumo`.
+### Linux / macOS (Bash/Zsh)
+Run the following command in your terminal:
+```bash
+curl -fsSL https://raw.githubusercontent.com/jmaxdev/Kumo/main/install.sh | bash
+```
+
+## Build from Source (Manual)
+To build the binary manually from source:
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/jmaxdev/Kumo.git
+   cd Kumo
+   ```
+
+2. **Build the release**:
+   ```bash
+   cargo build --release
+   ```
+
+The executable will be located at `target/release/cli` (on Windows `target/release/cli.exe`). You can rename it to `kumo` and add it to your PATH.
 
 ## Usage
 ### Add a package
