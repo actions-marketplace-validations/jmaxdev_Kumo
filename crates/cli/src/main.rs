@@ -554,17 +554,31 @@ async fn prune_store(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
         PruneSubcommand::Deps { full } => {
             let deps_dir_name = common::get_deps_dir();
             let deps_dir = std::env::current_dir()?.join(&deps_dir_name);
+
             if deps_dir.exists() {
-                tokio::fs::remove_dir_all(&deps_dir).await?;
+                if full {
+                    tokio::fs::remove_dir_all(&deps_dir).await?;
+                    println!("Removed {}/ and all its content.", deps_dir_name);
+
+                    let lock_path = std::env::current_dir()?.join("kumo.lock");
+                    if lock_path.exists() {
+                        tokio::fs::remove_file(&lock_path).await?;
+                        println!("Removed kumo.lock");
+                    }
+                } else {
+                    let mut entries = tokio::fs::read_dir(&deps_dir).await?;
+                    while let Some(entry) = entries.next_entry().await? {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            tokio::fs::remove_dir_all(path).await?;
+                        } else {
+                            tokio::fs::remove_file(path).await?;
+                        }
+                    }
+                    println!("Cleaned content of {}/.", deps_dir_name);
+                }
             } else {
                 println!("No {}/ directory found.", deps_dir_name);
-            }
-
-            if full {
-                let lock_path = std::env::current_dir()?.join("kumo.lock");
-                if lock_path.exists() {
-                    tokio::fs::remove_file(&lock_path).await?;
-                }
             }
         }
     }
