@@ -97,8 +97,13 @@ impl Store {
                         deleted_count += 1;
                     }
                 }
-                
-                if fs::read_dir(dir_entry.path()).await?.next_entry().await?.is_none() {
+
+                if fs::read_dir(dir_entry.path())
+                    .await?
+                    .next_entry()
+                    .await?
+                    .is_none()
+                {
                     fs::remove_dir(dir_entry.path()).await?;
                 }
             }

@@ -18,7 +18,9 @@ async fn main() -> Result<()> {
     let cli = KxCli::parse();
     let (store, security, resolver) = common::init_components().await?;
 
-    let bin_dir = std::env::current_dir()?.join(common::get_deps_dir()).join(".bin");
+    let bin_dir = std::env::current_dir()?
+        .join(common::get_deps_dir())
+        .join(".bin");
     let bin_path = bin_dir.join(&cli.binary);
     let bin_path_cmd = bin_dir.join(format!("{}.cmd", cli.binary));
 

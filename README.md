@@ -55,18 +55,26 @@ Keep your installation up to date with the latest security features and performa
 kumo update
 ```
 
+## Documentation
+For a complete list of commands and their usage, see the [CLI Documentation](docs/README.md).
+
 ### Security Policies
 Kumo uses a policy engine to determine if a package is safe. The default policy:
 - Blocks **deprecated** packages.
 - Blocks packages with **High/Critical** vulnerabilities.
 - Only allows **MIT, Apache-2.0, ISC, BSD** licenses.
 
-## Maintenance
+## 📄 License
 
-### Bumping Versions & Releasing
-To release a new version (this will update versions, commit, tag, and push to GitHub):
-```bash
-node scripts/bump.js patch  # Auto release v0.1.x
-node scripts/bump.js minor  # Auto release v0.x.0
-node scripts/bump.js major  # Auto release v1.0.0
-```
+Kitsu is licensed under the **[UnSetSoft Public License (UPL) 1.0](LICENSE.md)**.
+
+- ✅ You may use **parts** of the code in other projects with proper attribution
+- ❌ You may **not** distribute the original or modified versions
+- ❌ You may **not** use it for commercial purposes
+- ❌ You may **not** modify the code except for contributive purposes towards the original project
+
+See [LICENSE.md](LICENSE.md) for the full terms.
+
+## 🤝 Contributing
+
+See [docs/contributing.md](docs/contributing.md) for setup instructions, code standards, and areas where help is needed.

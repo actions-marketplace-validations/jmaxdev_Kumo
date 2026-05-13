@@ -160,7 +160,9 @@ impl Resolver {
             if let Some(s) = l.as_str() {
                 Some(s.to_string())
             } else {
-                l.get("type").and_then(|t| t.as_str()).map(|s| s.to_string())
+                l.get("type")
+                    .and_then(|t| t.as_str())
+                    .map(|s| s.to_string())
             }
         });
 

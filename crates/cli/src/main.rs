@@ -32,12 +32,18 @@ enum Commands {
         subcommand: PruneSubcommand,
     },
     Doctor,
-    Explain { name: String },
+    Explain {
+        name: String,
+    },
     Workspaces,
-    Patch { name: String },
+    Patch {
+        name: String,
+    },
     Timeline,
     Graph,
-    Sandbox { script: String },
+    Sandbox {
+        script: String,
+    },
     Update,
     #[command(external_subcommand)]
     External(Vec<String>),
@@ -139,12 +145,7 @@ async fn main() -> Result<()> {
 
                 if !vulns.is_empty() {
                     pb.suspend(|| {
-                        println!(
-                            "{}@{} has {} vulnerabilities!",
-                            name,
-                            version,
-                            vulns.len()
-                        );
+                        println!("{}@{} has {} vulnerabilities!", name, version, vulns.len());
                         for v in vulns {
                             println!("  - [{}] {}: {}", v.severity, v.id, v.summary);
                             total_vulns += 1;
@@ -230,7 +231,10 @@ async fn resolve_and_install(
         let gitignore_path = std::env::current_dir()?.join(".gitignore");
         if gitignore_path.exists() {
             let content = std::fs::read_to_string(&gitignore_path)?;
-            if !content.lines().any(|l| l.trim() == "dependencies" || l.trim() == "dependencies/") {
+            if !content
+                .lines()
+                .any(|l| l.trim() == "dependencies" || l.trim() == "dependencies/")
+            {
                 println!("Adding dependencies/ to .gitignore");
                 let mut file = std::fs::OpenOptions::new()
                     .append(true)
@@ -280,6 +284,7 @@ async fn resolve_and_install(
         let security = security;
         let main_pb = main_pb.clone();
         let multi_progress = multi_progress.clone();
+        let deps_dir_name = deps_dir_name.clone();
 
         async move {
             let parts: Vec<&str> = key.split('@').collect();
@@ -364,7 +369,16 @@ async fn resolve_and_install(
 
     main_pb.finish_with_message("Done!");
     println!("Installed {} packages.", lockfile.packages.len());
-    println!("Total size: {} MB", lockfile.packages.values().map(|p| p.resolution.size).sum::<u64>() / 1024 / 1024);
+    println!(
+        "Total size: {} MB",
+        lockfile
+            .packages
+            .values()
+            .map(|p| p.resolution.size)
+            .sum::<u64>()
+            / 1024
+            / 1024
+    );
 
     let mut errors = 0;
     for res in results {
@@ -488,7 +502,9 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
 }
 
 async fn execute_binary(name: &str, args: Vec<String>) -> Result<()> {
-    let bin_dir = std::env::current_dir()?.join(common::get_deps_dir()).join(".bin");
+    let bin_dir = std::env::current_dir()?
+        .join(common::get_deps_dir())
+        .join(".bin");
     let bin_path = bin_dir.join(name);
     let bin_path_cmd = bin_dir.join(format!("{}.cmd", name));
 
@@ -649,10 +665,7 @@ async fn explain_package(name: &str) -> Result<()> {
     }
 
     if !found {
-        println!(
-            "Package '{}' is not in the current dependency tree.",
-            name
-        );
+        println!("Package '{}' is not in the current dependency tree.", name);
     }
 
     Ok(())
