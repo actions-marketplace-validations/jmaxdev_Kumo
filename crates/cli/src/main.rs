@@ -27,7 +27,10 @@ enum Commands {
     },
     Scan,
     Stats,
-    Prune,
+    Prune {
+        #[command(subcommand)]
+        subcommand: PruneSubcommand,
+    },
     Doctor,
     Explain { name: String },
     Workspaces,
@@ -38,6 +41,15 @@ enum Commands {
     Update,
     #[command(external_subcommand)]
     External(Vec<String>),
+}
+
+#[derive(Subcommand)]
+enum PruneSubcommand {
+    Cache,
+    Packages {
+        #[arg(long)]
+        full: bool,
+    },
 }
 
 mod common;
@@ -159,8 +171,8 @@ async fn main() -> Result<()> {
         Commands::Stats => {
             show_stats(&store).await?;
         }
-        Commands::Prune => {
-            prune_store(&store).await?;
+        Commands::Prune { subcommand } => {
+            prune_store(&store, subcommand).await?;
         }
         Commands::Doctor => {
             run_doctor(&store).await?;
@@ -513,9 +525,32 @@ async fn show_stats(store: &Store) -> Result<()> {
     Ok(())
 }
 
-async fn prune_store(_store: &Store) -> Result<()> {
-    println!("🧹 Pruning unused packages from store...");
-    println!("✅ Prune complete. (Garbage collection logic implemented in core)");
+async fn prune_store(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
+    match subcommand {
+        PruneSubcommand::Cache => {
+            println!("🧹 Pruning unused packages from global store...");
+            let count = store.prune().await?;
+            println!("✅ Prune complete! Removed {} orphaned files.", count);
+        }
+        PruneSubcommand::Packages { full } => {
+            println!("🧹 Pruning local packages directory...");
+            let packages_dir = std::env::current_dir()?.join("packages");
+            if packages_dir.exists() {
+                tokio::fs::remove_dir_all(&packages_dir).await?;
+                println!("✅ Deleted packages/ directory.");
+            } else {
+                println!("💡 No packages/ directory found.");
+            }
+
+            if full {
+                let lock_path = std::env::current_dir()?.join("kumo.lock");
+                if lock_path.exists() {
+                    tokio::fs::remove_file(&lock_path).await?;
+                    println!("✅ Deleted kumo.lock");
+                }
+            }
+        }
+    }
     Ok(())
 }
 

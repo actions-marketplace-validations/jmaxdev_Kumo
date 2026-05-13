@@ -69,6 +69,44 @@ impl Store {
         }
     }
 
+    pub async fn prune(&self) -> Result<u64> {
+        let mut referenced_hashes = std::collections::HashSet::new();
+
+        let mut metadata_entries = fs::read_dir(self.root.join("metadata")).await?;
+        while let Some(entry) = metadata_entries.next_entry().await? {
+            let content = fs::read_to_string(entry.path()).await?;
+            let map: HashMap<String, String> = serde_json::from_str(&content)?;
+            for hash in map.values() {
+                referenced_hashes.insert(hash.clone());
+            }
+        }
+
+        let mut deleted_count = 0;
+        let objects_root = self.root.join("objects");
+        let mut dir_entries = fs::read_dir(&objects_root).await?;
+        while let Some(dir_entry) = dir_entries.next_entry().await? {
+            if dir_entry.file_type().await?.is_dir() {
+                let mut obj_entries = fs::read_dir(dir_entry.path()).await?;
+                while let Some(obj_entry) = obj_entries.next_entry().await? {
+                    let hash_suffix = obj_entry.file_name().to_string_lossy().to_string();
+                    let prefix = dir_entry.file_name().to_string_lossy().to_string();
+                    let full_hash = format!("{}{}", prefix, hash_suffix);
+
+                    if !referenced_hashes.contains(&full_hash) {
+                        fs::remove_file(obj_entry.path()).await?;
+                        deleted_count += 1;
+                    }
+                }
+                
+                if fs::read_dir(dir_entry.path()).await?.next_entry().await?.is_none() {
+                    fs::remove_dir(dir_entry.path()).await?;
+                }
+            }
+        }
+
+        Ok(deleted_count)
+    }
+
     fn get_index_path(&self, key: &str) -> PathBuf {
         let safe_key = key.replace('/', "__").replace('@', "@@");
         self.root
