@@ -67,6 +67,7 @@ struct RegistryVersion {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Lockfile {
     pub lockfile_version: String,
+    pub config_hash: Option<String>,
     pub dependencies: HashMap<String, String>,
     pub packages: HashMap<String, LockedPackage>,
 }
@@ -88,10 +89,24 @@ pub struct Resolver {
 
 impl Resolver {
     pub fn new() -> Self {
+        let client = reqwest::Client::builder()
+            .use_rustls_tls()
+            .http2_prior_knowledge()
+            .pool_max_idle_per_host(20)
+            .pool_idle_timeout(std::time::Duration::from_secs(90))
+            .tcp_nodelay(true)
+            .user_agent("kumo-pkg/0.1.35")
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
         Self {
-            client: reqwest::Client::new(),
+            client,
             registry_url: "https://registry.npmjs.org".to_string(),
         }
+    }
+
+    pub fn client(&self) -> &reqwest::Client {
+        &self.client
     }
 
     pub async fn resolve_package(self, name: String, range: String) -> Result<PackageMetadata> {
@@ -111,8 +126,6 @@ impl Resolver {
         let response: RegistryResponse = if cache_path.exists() {
             let content = std::fs::read_to_string(&cache_path)?;
             let res: RegistryResponse = serde_json::from_str(&content)?;
-            // If the first version in metadata is missing optional_dependencies field (as Option), 
-            // it might be an old cache. We re-fetch to be sure.
             let is_old_cache = res
                 .versions
                 .values()
@@ -291,7 +304,6 @@ impl Resolver {
         if cache_dir.exists() {
             if let Ok(entries) = std::fs::read_dir(cache_dir) {
                 if entries.count() > 10 {
-                    // Arbitrary number to see if cache has something
                     cache_empty = false;
                 }
             }
@@ -306,7 +318,6 @@ impl Resolver {
             BoxFuture<'static, (String, Result<PackageMetadata>)>,
         > = FuturesUnordered::new();
 
-        // Initial batch
         let mut initial_queue = queue.lock().unwrap();
         while let Some(item) = initial_queue.pop() {
             let r = (*resolver).clone();
@@ -319,15 +330,13 @@ impl Resolver {
 
         while let Some((req_name, metadata_res)) = active_resolutions.next().await {
             let metadata = metadata_res?;
-            
-            // Check compatibility
+
             if !Self::is_compatible(&metadata.os, &metadata.cpu) {
-                // Skip incompatible package
                 continue;
             }
 
             let key = format!("{}@{}", metadata.name, metadata.version);
-            
+
             let mut pkgs = packages.lock().unwrap();
             if !pkgs.contains_key(&key) {
                 let mut all_deps = metadata.dependencies.clone().unwrap_or_default();
@@ -349,7 +358,6 @@ impl Resolver {
                 );
                 drop(pkgs);
 
-                // Queue dependencies
                 for (d_name, d_range) in all_deps {
                     let r = (*resolver).clone();
                     active_resolutions.push(Box::pin(async move {
@@ -377,12 +385,17 @@ impl Resolver {
 
         Ok(Lockfile {
             lockfile_version: "1.0".to_string(),
+            config_hash: None,
             dependencies: final_root_deps,
             packages: final_packages,
         })
     }
 
-    async fn fetch_and_cache_metadata(&self, name: &str, cache_path: &std::path::Path) -> Result<RegistryResponse> {
+    async fn fetch_and_cache_metadata(
+        &self,
+        name: &str,
+        cache_path: &std::path::Path,
+    ) -> Result<RegistryResponse> {
         let url = format!("{}/{}", self.registry_url, name);
         let mut last_err = None;
 

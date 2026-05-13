@@ -15,29 +15,52 @@ pub async fn link_package(
             .context("Failed to create target directory")?;
     }
 
+    let mut tasks = futures_util::stream::FuturesUnordered::new();
+
     for (rel_path, hash) in file_map {
-        // Normalize relative path for the current OS
-        let normalized_rel_path = rel_path.replace('/', std::path::MAIN_SEPARATOR_STR);
-        let dest = target_dir.join(normalized_rel_path);
-        let src = store.get_path(hash);
+        let store = store.clone();
+        let target_dir = target_dir.to_path_buf();
+        let rel_path = rel_path.clone();
+        let hash = hash.clone();
 
-        if let Some(parent) = dest.parent() {
-            fs::create_dir_all(parent)
-                .await
-                .context("Failed to create parent directory for file link")?;
-        }
+        tasks.push(async move {
+            let normalized_rel_path = rel_path.replace('/', std::path::MAIN_SEPARATOR_STR);
+            let dest = target_dir.join(normalized_rel_path);
+            let src = store.get_path(&hash);
 
-        if dest.exists() {
-            // Try to remove existing file to ensure we can create a new link/copy
-            let _ = fs::remove_file(&dest).await;
-        }
+            if let Some(parent) = dest.parent() {
+                fs::create_dir_all(parent)
+                    .await
+                    .context("Failed to create parent directory for file link")?;
+            }
 
-        if fs::hard_link(&src, &dest).await.is_err() {
-            // Fallback to copy if hard_link fails (e.g. across different partitions)
-            fs::copy(&src, &dest)
-                .await
-                .with_context(|| format!("Failed to copy file from {:?} to {:?}", src, dest))?;
-        }
+            if dest.exists() {
+                let _ = fs::remove_file(&dest).await;
+            }
+
+            let src_clone = src.clone();
+            let dest_clone = dest.clone();
+
+            let result = tokio::task::spawn_blocking(move || {
+                if reflink_copy::reflink(&src_clone, &dest_clone).is_ok() {
+                    return Ok(());
+                }
+                if std::fs::hard_link(&src_clone, &dest_clone).is_ok() {
+                    return Ok(());
+                }
+                std::fs::copy(&src_clone, &dest_clone)
+                    .map(|_| ())
+                    .map_err(|e| anyhow::anyhow!(e))
+            })
+            .await?;
+
+            result.with_context(|| format!("Failed to link/copy file from {:?} to {:?}", src, dest))
+        });
+    }
+
+    use futures_util::StreamExt;
+    while let Some(res) = tasks.next().await {
+        res?;
     }
 
     Ok(())

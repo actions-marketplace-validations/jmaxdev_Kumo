@@ -1,6 +1,6 @@
 [package]
 name = "kumo-core"
-version = "0.1.35"
+version = "0.1.36-alpha.1"
 edition = "2021"
 
 [dependencies]
@@ -13,6 +13,9 @@ anyhow = "1.0"
 walkdir = "2.4"
 tar = "0.4"
 flate2 = "1.0"
-reqwest = { version = "0.11", features = ["json", "stream"] }
+reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
 futures-util = "0.3"
 tempfile = "3.10"
+tokio-util = { version = "0.7", features = ["io", "io-util"] }
+bytes = "1.5"
+reflink-copy = "0.1"

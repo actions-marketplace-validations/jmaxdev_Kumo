@@ -96,22 +96,21 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let (store, security, resolver) = common::init_components().await?;
 
+    let kumo_json_path = std::env::current_dir()?.join("kumo.json");
+    let pkg_json_path = std::env::current_dir()?.join("package.json");
+    let config_path = if kumo_json_path.exists() {
+        kumo_json_path
+    } else if pkg_json_path.exists() {
+        pkg_json_path
+    } else {
+        anyhow::bail!("Neither kumo.json nor package.json found in current directory");
+    };
+
     match cli.command {
         Commands::Install { log } => {
             println!("Reading configuration...");
-            let kumo_json_path = std::env::current_dir()?.join("kumo.json");
-            let pkg_json_path = std::env::current_dir()?.join("package.json");
-
-            let config_path = if kumo_json_path.exists() {
-                kumo_json_path
-            } else if pkg_json_path.exists() {
-                pkg_json_path
-            } else {
-                anyhow::bail!("Neither kumo.json nor package.json found in current directory");
-            };
-
             let config_content: serde_json::Value =
-                serde_json::from_str(&std::fs::read_to_string(config_path)?)?;
+                serde_json::from_str(&std::fs::read_to_string(&config_path)?)?;
             let mut deps = HashMap::new();
 
             if let Some(d) = config_content
@@ -131,7 +130,7 @@ async fn main() -> Result<()> {
                 }
             }
 
-            resolve_and_install(&store, &resolver, &security, deps, log).await?;
+            resolve_and_install(&store, &resolver, &security, deps, log, config_path).await?;
         }
         Commands::Add {
             name,
@@ -142,30 +141,37 @@ async fn main() -> Result<()> {
             if global {
                 install_global(&store, &resolver, &security, name).await?;
             } else {
-                println!("Adding {}...", name);
+                println!("Adding {} to configuration...", name);
+                let mut config_content: serde_json::Value =
+                    serde_json::from_str(&std::fs::read_to_string(&config_path)?)?;
+                let section = if dev {
+                    "devDependencies"
+                } else {
+                    "dependencies"
+                };
+                if let Some(obj) = config_content.as_object_mut() {
+                    obj.entry(section.to_string())
+                        .or_insert(serde_json::json!({}))
+                        .as_object_mut()
+                        .unwrap()
+                        .insert(name.clone(), serde_json::json!("latest"));
+                }
+                
+                let json = serde_json::to_string_pretty(&config_content)?;
+                std::fs::write(&config_path, json)?;
+                println!(
+                    "Updated {} with {}",
+                    config_path.file_name().unwrap().to_string_lossy(),
+                    name
+                );
+
                 let mut deps = HashMap::new();
                 deps.insert(name.clone(), "latest".to_string());
-
-                resolve_and_install(&store, &resolver, &security, deps, log).await?;
-
-                if dev {
-                    println!("(Added to devDependencies - package.json update not implemented)");
-                }
+                resolve_and_install(&store, &resolver, &security, deps, log, config_path).await?;
             }
         }
         Commands::Remove { name } => {
             println!("Removing {}...", name);
-            let kumo_json_path = std::env::current_dir()?.join("kumo.json");
-            let pkg_json_path = std::env::current_dir()?.join("package.json");
-
-            let config_path = if kumo_json_path.exists() {
-                kumo_json_path
-            } else if pkg_json_path.exists() {
-                pkg_json_path
-            } else {
-                anyhow::bail!("Neither kumo.json nor package.json found in current directory");
-            };
-
             let mut config_content: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(&config_path)?)?;
 
@@ -190,7 +196,6 @@ async fn main() -> Result<()> {
             if !removed {
                 println!("Package {} not found in dependencies.", name);
             } else {
-                // Save updated config
                 let json = serde_json::to_string_pretty(&config_content)?;
                 std::fs::write(&config_path, json)?;
                 println!(
@@ -199,14 +204,12 @@ async fn main() -> Result<()> {
                     config_path.file_name().unwrap().to_string_lossy()
                 );
 
-                // Remove from local directory
                 let deps_dir = common::get_deps_dir();
                 let pkg_dir = std::env::current_dir()?.join(&deps_dir).join(&name);
                 if pkg_dir.exists() {
                     let _ = std::fs::remove_dir_all(&pkg_dir);
                 }
 
-                // Re-resolve and update lockfile
                 println!("Updating lockfile and cleaning up...");
                 let mut deps = HashMap::new();
                 if let Some(d) = config_content
@@ -226,10 +229,7 @@ async fn main() -> Result<()> {
                     }
                 }
 
-                // We need to clean the deps dir first if we want a clean state,
-                // or just let resolve_and_install do its thing (but it won't delete orphans)
-                // For now, let's just re-install.
-                resolve_and_install(&store, &resolver, &security, deps, false).await?;
+                resolve_and_install(&store, &resolver, &security, deps, false, config_path).await?;
             }
         }
         Commands::Scan => {
@@ -297,19 +297,89 @@ async fn main() -> Result<()> {
             explain_package(&name).await?;
         }
         Commands::Workspaces => {
-            println!("Kumo Workspaces: Detecting packages...");
-            println!("Monorepo support enabled (found 0 local packages).");
+            println!("Kumo Workspaces: Detecting local packages...");
+            let mut found = 0;
+            if let Ok(entries) = std::fs::read_dir(".") {
+                for entry in entries.flatten() {
+                    if entry.path().is_dir() {
+                        let pkg_json = entry.path().join("package.json");
+                        let kumo_json = entry.path().join("kumo.json");
+                        if pkg_json.exists() || kumo_json.exists() {
+                            let path = if pkg_json.exists() {
+                                pkg_json
+                            } else {
+                                kumo_json
+                            };
+                            if let Ok(content) = std::fs::read_to_string(path) {
+                                let v: serde_json::Value =
+                                    serde_json::from_str(&content).unwrap_or_default();
+                                let name = v["name"].as_str().unwrap_or("unknown");
+                                let version = v["version"].as_str().unwrap_or("0.0.0");
+                                println!(" - {} (v{}) at {:?}", name, version, entry.path());
+                                found += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            if found == 0 {
+                println!("No local workspaces found. Kumo supports monorepos with package.json/kumo.json in subdirectories.");
+            } else {
+                println!("Found {} local packages.", found);
+            }
         }
         Commands::Patch { name } => {
             println!("Patching package: {}...", name);
-            println!(
-                "Package extracted to .kumo/patch/{}. Edit and run 'kumo patch-commit'.",
-                name
-            );
+            let lock_path = std::env::current_dir()?.join("kumo.lock");
+            if !lock_path.exists() {
+                anyhow::bail!("kumo.lock not found.");
+            }
+            let lockfile: Lockfile = serde_yaml::from_str(&std::fs::read_to_string(lock_path)?)?;
+
+            let mut pkg_key = None;
+            for key in lockfile.packages.keys() {
+                if key.starts_with(&name) {
+                    pkg_key = Some(key.clone());
+                    break;
+                }
+            }
+
+            if let Some(_key) = pkg_key {
+                let patch_dir = std::env::current_dir()?
+                    .join(".kumo")
+                    .join("patch")
+                    .join(&name);
+                std::fs::create_dir_all(&patch_dir)?;
+                let deps_dir = common::get_deps_dir();
+                let src_dir = std::env::current_dir()?
+                    .join(deps_dir)
+                    .join(&name.replace('/', std::path::MAIN_SEPARATOR_STR));
+                if src_dir.exists() {
+                    println!("Extracting package for patching to {:?}...", patch_dir);
+                    copy_dir_recursive(&src_dir, &patch_dir).await?;
+                    println!("Done. Package ready for modification at {:?}", patch_dir);
+                    println!(
+                        "After editing, you can use 'kumo install' to sync changes (experimental)."
+                    );
+                }
+            }
         }
         Commands::Timeline => {
-            println!("Project Timeline:");
-            println!(" - Today: 0 vulnerabilities, all policies compliant.");
+            let lock_path = std::env::current_dir()?.join("kumo.lock");
+            if let Ok(metadata) = std::fs::metadata(&lock_path) {
+                let created = metadata.created().unwrap_or(metadata.modified().unwrap());
+                let modified = metadata.modified().unwrap();
+                println!("Project Timeline (based on kumo.lock):");
+                println!(" - Created: {:?}", created);
+                println!(" - Last Update: {:?}", modified);
+                if let Ok(lockfile_str) = std::fs::read_to_string(&lock_path) {
+                    if let Ok(lockfile) = serde_yaml::from_str::<Lockfile>(&lockfile_str) {
+                        println!(" - Dependencies: {}", lockfile.packages.len());
+                    }
+                }
+            } else {
+                println!("No timeline available. Run 'kumo install' to generate a lockfile.");
+            }
         }
         Commands::Graph => {
             generate_graph().await?;
@@ -353,6 +423,7 @@ async fn resolve_and_install(
     security: &SecurityEngine,
     deps: HashMap<String, String>,
     show_logs: bool,
+    config_path: std::path::PathBuf,
 ) -> Result<()> {
     let deps_dir_name = common::get_deps_dir();
 
@@ -377,23 +448,41 @@ async fn resolve_and_install(
         }
     }
 
-    println!("Resolving full dependency tree...");
-    let lockfile = resolver.resolve_tree(&deps).await?;
+    let current_config_content = std::fs::read_to_string(&config_path)?;
+    let config_hash = blake3::hash(current_config_content.as_bytes()).to_string();
 
     let lock_path = std::env::current_dir()?.join("kumo.lock");
-    let yaml = serde_yaml::to_string(&lockfile)?;
-    std::fs::write(&lock_path, yaml)?;
-    println!("Generated kumo.lock");
+    let lockfile_exists = lock_path.exists();
+    let lockfile: Option<Lockfile> = if lockfile_exists {
+        serde_yaml::from_str(&std::fs::read_to_string(&lock_path)?).ok()
+    } else {
+        None
+    };
 
-    println!("Selecting primary versions for flat installation...");
-    let mut winners: HashMap<String, String> = HashMap::new();
-    
-    // 1. Direct dependencies always win their slot
-    for (name, version) in &lockfile.dependencies {
-        winners.insert(name.clone(), format!("{}@{}", name, version));
-    }
-    
-    // 2. For transient dependencies, the latest version wins (unless it's a direct dep)
+    let lockfile = if let Some(lf) = lockfile {
+        if lf.config_hash == Some(config_hash.clone()) {
+            println!("Configuration unchanged. Using persistent resolution cache.");
+            lf
+        } else {
+            println!("Resolving full dependency tree...");
+            let mut lf = resolver.resolve_tree(&deps).await?;
+            lf.config_hash = Some(config_hash);
+            let yaml = serde_yaml::to_string(&lf)?;
+            std::fs::write(&lock_path, yaml)?;
+            lf
+        }
+    } else {
+        println!("Resolving full dependency tree...");
+        let mut lf = resolver.resolve_tree(&deps).await?;
+        lf.config_hash = Some(config_hash);
+        let yaml = serde_yaml::to_string(&lf)?;
+        std::fs::write(&lock_path, yaml)?;
+        lf
+    };
+
+    use rayon::prelude::*;
+
+    let mut packages_by_name: HashMap<String, Vec<String>> = HashMap::new();
     for key in lockfile.packages.keys() {
         let parts: Vec<&str> = key.split('@').collect();
         let name = if key.starts_with('@') {
@@ -401,38 +490,47 @@ async fn resolve_and_install(
         } else {
             parts[0].to_string()
         };
-
-        // If it's a direct dependency, it already won its slot in step 1 and cannot be replaced
-        if lockfile.dependencies.contains_key(&name) {
-            continue;
-        }
-
-        let version = if key.starts_with('@') {
-            parts.get(2).unwrap_or(&"0.0.0").to_string()
-        } else {
-            parts.get(1).unwrap_or(&"0.0.0").to_string()
-        };
-        
-        let current_winner_key = winners.get(&name);
-        let should_update = if let Some(winner_key) = current_winner_key {
-            let winner_parts: Vec<&str> = winner_key.split('@').collect();
-            let winner_version = if winner_key.starts_with('@') {
-                winner_parts.get(2).unwrap_or(&"0.0.0").to_string()
-            } else {
-                winner_parts.get(1).unwrap_or(&"0.0.0").to_string()
-            };
-            
-            let v_new = semver::Version::parse(&version).unwrap_or_else(|_| semver::Version::new(0, 0, 0));
-            let v_old = semver::Version::parse(&winner_version).unwrap_or_else(|_| semver::Version::new(0, 0, 0));
-            v_new > v_old
-        } else {
-            true
-        };
-        
-        if should_update {
-            winners.insert(name.clone(), key.clone());
-        }
+        packages_by_name.entry(name).or_default().push(key.clone());
     }
+
+    let winners: HashMap<String, String> = packages_by_name
+        .into_par_iter()
+        .map(|(name, versions)| {
+            let mut best_key = versions[0].clone();
+
+            if let Some(root_version) = lockfile.dependencies.get(&name) {
+                let root_key = format!("{}@{}", name, root_version);
+                if versions.contains(&root_key) {
+                    best_key = root_key;
+                }
+            } else {
+                for key in &versions {
+                    let parts: Vec<&str> = key.split('@').collect();
+                    let version = if key.starts_with('@') {
+                        parts.get(2).unwrap_or(&"0.0.0").to_string()
+                    } else {
+                        parts.get(1).unwrap_or(&"0.0.0").to_string()
+                    };
+
+                    let best_parts: Vec<&str> = best_key.split('@').collect();
+                    let best_version = if best_key.starts_with('@') {
+                        best_parts.get(2).unwrap_or(&"0.0.0").to_string()
+                    } else {
+                        best_parts.get(1).unwrap_or(&"0.0.0").to_string()
+                    };
+
+                    let v_new = semver::Version::parse(&version)
+                        .unwrap_or_else(|_| semver::Version::new(0, 0, 0));
+                    let v_old = semver::Version::parse(&best_version)
+                        .unwrap_or_else(|_| semver::Version::new(0, 0, 0));
+                    if v_new > v_old {
+                        best_key = key.clone();
+                    }
+                }
+            }
+            (name, best_key)
+        })
+        .collect();
 
     println!(
         "Downloading and linking {} unique packages...",
@@ -441,7 +539,7 @@ async fn resolve_and_install(
 
     let cpus = num_cpus::get();
     let concurrent_limit = cpus * 2;
-    
+
     let multi_progress = indicatif::MultiProgress::new();
     let main_pb = multi_progress.add(indicatif::ProgressBar::new(winners.len() as u64));
     main_pb.set_style(
@@ -453,17 +551,15 @@ async fn resolve_and_install(
     );
     main_pb.set_message("Installing packages...");
 
-    // Create a list of packages to install based on winners
     let packages_to_install: Vec<(String, resolver::LockedPackage)> = winners
         .values()
-        .filter_map(|key| {
-            lockfile.packages.get(key).map(|p| (key.clone(), p.clone()))
-        })
+        .filter_map(|key| lockfile.packages.get(key).map(|p| (key.clone(), p.clone())))
         .collect();
 
     let stream = futures::stream::iter(packages_to_install).map(|(key, pkg)| {
         let store = store;
         let security = security;
+        let resolver = resolver.clone();
         let main_pb = main_pb.clone();
         let multi_progress = multi_progress.clone();
         let deps_dir_name = deps_dir_name.clone();
@@ -480,7 +576,6 @@ async fn resolve_and_install(
             } else {
                 parts[0].to_string()
             };
-            // Normalize name for Windows paths if it contains slashes
             let name = name.replace('/', std::path::MAIN_SEPARATOR_STR);
 
             let version = if key.starts_with('@') {
@@ -508,15 +603,12 @@ async fn resolve_and_install(
                 let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
                 kumo_core::package::link_package(store, &target_dir, &file_map).await?;
 
-                // Still need to create shims for cached packages!
                 if let Some(bin) = pkg.bin.as_ref() {
                     let bin_dir = std::env::current_dir()?.join(&deps_dir_name).join(".bin");
                     tokio::fs::create_dir_all(&bin_dir).await?;
 
                     match bin {
                         serde_json::Value::String(path) => {
-                            // For scoped packages like @scope/pkg, if bin is a string,
-                            // the binary name should be just 'pkg'
                             let bin_name = if name.contains(std::path::MAIN_SEPARATOR) {
                                 name.split(std::path::MAIN_SEPARATOR)
                                     .last()
@@ -551,14 +643,7 @@ async fn resolve_and_install(
             });
 
             let is_safe = security
-                .validate_package(
-                    &name,
-                    &version,
-                    None,  // license
-                    false, // is_deprecated (should fetch from metadata if available)
-                    None,  // published_at
-                    has_scripts,
-                )
+                .validate_package(&name, &version, None, false, None, has_scripts)
                 .await?;
 
             if !is_safe {
@@ -569,15 +654,16 @@ async fn resolve_and_install(
             }
 
             if let Some(ref pb) = pb {
-                pb.set_message(format!("Downloading {}@{}...", name, version));
+                pb.set_message(format!("Streaming {}@{}...", name, version));
             }
-            let response = reqwest::get(&pkg.resolution.tarball).await?;
-            let bytes = response.bytes().await?;
+            let response = resolver
+                .client()
+                .get(&pkg.resolution.tarball)
+                .send()
+                .await?;
+            let stream = response.bytes_stream();
 
-            if let Some(ref pb) = pb {
-                pb.set_message(format!("Extracting {}...", name));
-            }
-            let file_map = kumo_core::tarball::extract_and_store(store, &bytes).await?;
+            let file_map = kumo_core::tarball::extract_streaming(store, stream).await?;
 
             store.save_index(&key, &file_map).await?;
 
@@ -587,10 +673,6 @@ async fn resolve_and_install(
 
             let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&name);
             kumo_core::package::link_package(store, &target_dir, &file_map).await?;
-
-            if pkg.scripts.is_some() {
-                // We'll run scripts later
-            }
 
             if let Some(bin) = pkg.bin.as_ref() {
                 let bin_dir = std::env::current_dir()?.join(&deps_dir_name).join(".bin");
@@ -632,13 +714,14 @@ async fn resolve_and_install(
     main_pb.finish_with_message("Done!");
     println!("Installed {} unique packages.", winners.len());
 
-    // --- NEW PHASE: Run install scripts in order ---
     println!("Running lifecycle scripts...");
     for (name, key) in &winners {
         if let Some(pkg) = lockfile.packages.get(key) {
             if let Some(scripts) = &pkg.scripts {
                 let normalized_name = name.replace('/', std::path::MAIN_SEPARATOR_STR);
-                let target_dir = std::env::current_dir()?.join(&deps_dir_name).join(&normalized_name);
+                let target_dir = std::env::current_dir()?
+                    .join(&deps_dir_name)
+                    .join(&normalized_name);
                 if !scripts.is_empty() {
                     let _ = run_install_scripts(&target_dir, scripts).await;
                 }
@@ -741,7 +824,6 @@ async fn create_shim(
 ) -> Result<()> {
     let shim_path = bin_dir.join(format!("{}.cmd", name));
 
-    // Ensure parent directory of the shim exists (important for scoped bin names)
     if let Some(parent) = shim_path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
@@ -772,19 +854,20 @@ async fn run_install_scripts(
                 sh
             };
 
-            // Set NODE_PATH to the deps dir so node can find other packages
             if let Some(deps_dir) = pkg_dir.parent() {
-                // If it's a scoped package, the parent is the @scope dir, so we need to go up one more
-                let real_deps_dir = if deps_dir.file_name().and_then(|f| f.to_str()).map_or(false, |s| s.starts_with('@')) {
+                let real_deps_dir = if deps_dir
+                    .file_name()
+                    .and_then(|f| f.to_str())
+                    .map_or(false, |s| s.starts_with('@'))
+                {
                     deps_dir.parent().unwrap_or(deps_dir)
                 } else {
                     deps_dir
                 };
-                
+
                 command.env("NODE_PATH", real_deps_dir);
                 command.env("NODE_NO_WARNINGS", "1");
 
-                // Also add .bin to PATH so scripts can find local binaries
                 let bin_dir = deps_dir.join(".bin");
                 if bin_dir.exists() {
                     let path = std::env::var("PATH").unwrap_or_default();
@@ -793,196 +876,54 @@ async fn run_install_scripts(
                 }
             }
 
-            let _ = command.current_dir(pkg_dir).status();
+            let status = command.current_dir(pkg_dir).status()?;
+            if !status.success() {
+                eprintln!("Warning: Script '{}' failed for {:?}", script_name, pkg_dir);
+            }
         }
     }
-    Ok(())
-}
-
-async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
-    let pkg_json_path = std::env::current_dir()?.join("kumo.json");
-    let npm_json_path = std::env::current_dir()?.join("package.json");
-
-    let config_path = if pkg_json_path.exists() {
-        pkg_json_path
-    } else {
-        npm_json_path
-    };
-    if !config_path.exists() {
-        return execute_binary(name, args).await;
-    }
-
-    let config_content: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(config_path)?)?;
-
-    if let Some(script) = config_content
-        .get("scripts")
-        .and_then(|s| s.get(name))
-        .and_then(|v| v.as_str())
-    {
-        println!("Running script: {} ({})", name, script);
-
-        let bin_path = std::env::current_dir()?
-            .join(common::get_deps_dir())
-            .join(".bin");
-
-        let mut command = if cfg!(windows) {
-            let mut cmd = std::process::Command::new("cmd");
-            cmd.arg("/c").arg(format!("{} {}", script, args.join(" ")));
-            cmd
-        } else {
-            let mut sh = std::process::Command::new("sh");
-            sh.arg("-c").arg(format!("{} {}", script, args.join(" ")));
-            sh
-        };
-
-        let new_path = if let Ok(existing_path) = std::env::var("PATH") {
-            let sep = if cfg!(windows) { ";" } else { ":" };
-            format!("{}{}{}", bin_path.display(), sep, existing_path)
-        } else {
-            bin_path.display().to_string()
-        };
-
-        let mut child = command.env("PATH", new_path).spawn()?;
-
-        child.wait()?;
-        Ok(())
-    } else {
-        execute_binary(name, args).await
-    }
-}
-
-async fn execute_binary(name: &str, args: Vec<String>) -> Result<()> {
-    let bin_dir = std::env::current_dir()?
-        .join(common::get_deps_dir())
-        .join(".bin");
-    let bin_path = bin_dir.join(name);
-    let bin_path_cmd = bin_dir.join(format!("{}.cmd", name));
-
-    let exe = if bin_path_cmd.exists() {
-        bin_path_cmd
-    } else if bin_path.exists() {
-        bin_path
-    } else {
-        anyhow::bail!("Command or script '{}' not found.", name);
-    };
-
-    println!("Executing binary: {}", name);
-
-    let mut command = std::process::Command::new(&exe);
-    command.args(args);
-
-    let new_path = if let Ok(existing_path) = std::env::var("PATH") {
-        let sep = if cfg!(windows) { ";" } else { ":" };
-        format!("{}{}{}", bin_dir.display(), sep, existing_path)
-    } else {
-        bin_dir.display().to_string()
-    };
-
-    let mut child = command.env("PATH", new_path).spawn()?;
-
-    child.wait()?;
     Ok(())
 }
 
 async fn show_stats(store: &Store) -> Result<()> {
     let root = store.get_root();
     let objects_dir = root.join("objects");
-    let metadata_dir = root.join("metadata");
+    let mut total_size = 0;
+    let mut file_count = 0;
 
-    let mut object_count = 0;
-    let mut total_size = 0u64;
-    let mut package_count = 0;
-
-    if let Ok(mut entries) = tokio::fs::read_dir(metadata_dir).await {
-        while let Ok(Some(_)) = entries.next_entry().await {
-            package_count += 1;
-        }
-    }
-
-    if let Ok(mut entries) = tokio::fs::read_dir(objects_dir).await {
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let metadata = entry.metadata().await?;
-            if metadata.is_file() {
-                object_count += 1;
-                total_size += metadata.len();
+    if objects_dir.exists() {
+        let mut entries = tokio::fs::read_dir(objects_dir).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            if entry.file_type().await?.is_dir() {
+                let mut files = tokio::fs::read_dir(entry.path()).await?;
+                while let Some(file) = files.next_entry().await? {
+                    total_size += file.metadata().await?.len();
+                    file_count += 1;
+                }
             }
         }
     }
 
-    println!("Total Unique Packages: {}", package_count);
-    println!("Total Unique Files: {}", object_count);
-
-    if total_size >= 1024 * 1024 * 1024 {
-        println!(
-            "Store Disk Usage: {:.2} GB",
-            total_size as f64 / 1024.0 / 1024.0 / 1024.0
-        );
-        println!(
-            "Estimated Space Saved: {:.2} GB",
-            (total_size as f64 * 0.4) / 1024.0 / 1024.0 / 1024.0
-        );
-    } else if total_size >= 1024 * 1024 {
-        println!(
-            "Store Disk Usage: {:.2} MB",
-            total_size as f64 / 1024.0 / 1024.0
-        );
-        println!(
-            "Estimated Space Saved: {:.2} MB",
-            (total_size as f64 * 0.4) / 1024.0 / 1024.0
-        );
-    } else {
-        println!("Store Disk Usage: {:.2} KB", total_size as f64 / 1024.0);
-        println!(
-            "Estimated Space Saved: {:.2} KB",
-            (total_size as f64 * 0.4) / 1024.0
-        );
-    }
+    println!("Kumo Global Store Stats:");
+    println!("Location: {:?}", root);
+    println!("Total objects: {}", file_count);
+    println!("Total size: {:.2} MB", total_size as f64 / 1024.0 / 1024.0);
     Ok(())
 }
 
 async fn prune_store(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
     match subcommand {
-        PruneSubcommand::Cache { full } => {
-            if full {
-                let metadata_dir = store.get_root().join("metadata");
-                if metadata_dir.exists() {
-                    tokio::fs::remove_dir_all(&metadata_dir).await?;
-                    tokio::fs::create_dir_all(&metadata_dir).await?;
-                    println!("Cleared all package metadata.");
-                }
-            }
-            let count = store.prune().await?;
-            println!("Removed {} orphaned files.", count);
+        PruneSubcommand::Cache { full: _ } => {
+            println!("Pruning global store objects...");
+            let deleted = store.prune().await?;
+            println!("Cleaned up {} unreferenced objects.", deleted);
         }
-        PruneSubcommand::Deps { full } => {
-            let deps_dir_name = common::get_deps_dir();
-            let deps_dir = std::env::current_dir()?.join(&deps_dir_name);
-
-            if deps_dir.exists() {
-                if full {
-                    tokio::fs::remove_dir_all(&deps_dir).await?;
-                    println!("Removed {}/ and all its content.", deps_dir_name);
-
-                    let lock_path = std::env::current_dir()?.join("kumo.lock");
-                    if lock_path.exists() {
-                        tokio::fs::remove_file(&lock_path).await?;
-                        println!("Removed kumo.lock");
-                    }
-                } else {
-                    let mut entries = tokio::fs::read_dir(&deps_dir).await?;
-                    while let Some(entry) = entries.next_entry().await? {
-                        let path = entry.path();
-                        if path.is_dir() {
-                            tokio::fs::remove_dir_all(path).await?;
-                        } else {
-                            tokio::fs::remove_file(path).await?;
-                        }
-                    }
-                    println!("Cleaned content of {}/.", deps_dir_name);
-                }
-            } else {
-                println!("No {}/ directory found.", deps_dir_name);
+        PruneSubcommand::Deps { full: _ } => {
+            let deps_dir = common::get_deps_dir();
+            println!("Pruning {} directory...", deps_dir);
+            if std::path::Path::new(&deps_dir).exists() {
+                std::fs::remove_dir_all(&deps_dir)?;
+                println!("Deleted local {} directory.", deps_dir);
             }
         }
     }
@@ -990,39 +931,25 @@ async fn prune_store(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
 }
 
 async fn run_doctor(store: &Store) -> Result<()> {
+    println!("Kumo Doctor: Checking system health...");
     let root = store.get_root();
-    let objects_dir = root.join("objects");
-
-    let mut corrupted = 0;
-    let mut verified = 0;
-
-    if let Ok(mut entries) = tokio::fs::read_dir(objects_dir).await {
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let path = entry.path();
-            if path.is_file() {
-                let expected_hash = path.file_name().unwrap().to_str().unwrap();
-                let bytes = tokio::fs::read(&path).await?;
-                let mut hasher = blake3::Hasher::new();
-                hasher.update(&bytes);
-                let actual_hash = hasher.finalize().to_hex().to_string();
-
-                if expected_hash != actual_hash {
-                    println!("Corruption detected: {}", expected_hash);
-                    corrupted += 1;
-                } else {
-                    verified += 1;
-                }
-            }
-        }
+    if root.exists() {
+        println!("[OK] Global store exists at {:?}", root);
+    } else {
+        println!("[WARN] Global store not found. Running init...");
+        store.init().await?;
     }
 
-    println!("Verified {} files.", verified);
-    if corrupted > 0 {
-        println!(
-            "Found {} corrupted files. Run 'kumo repair' (future) to fix.",
-            corrupted
-        );
+    let node_version = std::process::Command::new("node").arg("--version").output();
+    match node_version {
+        Ok(output) => println!(
+            "[OK] Node.js found: {}",
+            String::from_utf8_lossy(&output.stdout).trim()
+        ),
+        Err(_) => println!("[ERROR] Node.js not found in PATH"),
     }
+
+    println!("Health check complete.");
     Ok(())
 }
 
@@ -1033,29 +960,37 @@ async fn explain_package(name: &str) -> Result<()> {
     }
 
     let lockfile: Lockfile = serde_yaml::from_str(&std::fs::read_to_string(lock_path)?)?;
-
     let mut found = false;
-    for (key, _pkg) in &lockfile.packages {
-        if key.starts_with(name)
-            && (key.chars().nth(name.len()) == Some('@') || key.len() == name.len())
-        {
-            println!("Found: {}", key);
-            found = true;
 
-            for (parent_key, parent_pkg) in &lockfile.packages {
-                if let Some(deps) = &parent_pkg.dependencies {
-                    if deps.contains_key(name) {
-                        println!("   └── Required by: {}", parent_key);
-                    }
+    for (key, pkg) in &lockfile.packages {
+        if key.starts_with(name)
+            && (key.len() == name.len() || key.chars().nth(name.len()) == Some('@'))
+        {
+            println!("Package: {}", key);
+            let parts: Vec<&str> = key.split('@').collect();
+            let pkg_name = if key.starts_with('@') {
+                format!("@{}", parts[1])
+            } else {
+                parts[0].to_string()
+            };
+            if lockfile.dependencies.contains_key(&pkg_name) {
+                println!("Reason: Direct dependency in configuration.");
+            } else {
+                println!("Reason: Transient dependency (required by another package).");
+            }
+            if let Some(deps) = &pkg.dependencies {
+                println!("Dependencies: {} packages", deps.len());
+                for (d_name, d_range) in deps {
+                    println!("  - {} ({})", d_name, d_range);
                 }
             }
+            found = true;
         }
     }
 
     if !found {
-        println!("Package '{}' is not in the current dependency tree.", name);
+        println!("Package '{}' not found in current lockfile.", name);
     }
-
     Ok(())
 }
 
@@ -1064,149 +999,116 @@ async fn generate_graph() -> Result<()> {
     if !lock_path.exists() {
         anyhow::bail!("kumo.lock not found.");
     }
-
     let lockfile: Lockfile = serde_yaml::from_str(&std::fs::read_to_string(lock_path)?)?;
 
-    println!("\n```mermaid");
-    println!("graph TD");
+    let mut dot = String::from("digraph G {\n");
+    dot.push_str("  node [shape=box, fontname=\"Arial\"];\n");
+
+    for (name, version) in &lockfile.dependencies {
+        dot.push_str(&format!("  \"Project\" -> \"{}@{}\";\n", name, version));
+    }
 
     for (key, pkg) in &lockfile.packages {
-        let name = key.split('@').next().unwrap();
         if let Some(deps) = &pkg.dependencies {
-            for (dep_name, _range) in deps {
-                println!("    {} --> {}", name, dep_name);
+            for (d_name, d_range) in deps {
+                let mut d_key = format!("{}@{}", d_name, d_range);
+                for k in lockfile.packages.keys() {
+                    if k.starts_with(d_name) {
+                        d_key = k.clone();
+                        break;
+                    }
+                }
+                dot.push_str(&format!("  \"{}\" -> \"{}\";\n", key, d_key));
             }
         }
     }
 
-    println!("```\n");
-    println!("Copy the code above into any Mermaid-compatible viewer (like GitHub or Notion).");
+    dot.push_str("}\n");
+    std::fs::write("dependency-graph.dot", dot)?;
+    println!("Graph saved to dependency-graph.dot. Use 'dot -Tsvg dependency-graph.dot -o graph.svg' to visualize.");
+    Ok(())
+}
+
+async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
+    let deps_dir = common::get_deps_dir();
+    let bin_dir = std::env::current_dir()?.join(&deps_dir).join(".bin");
+    let cmd_path = bin_dir.join(format!("{}.cmd", name));
+
+    if !cmd_path.exists() {
+        anyhow::bail!("Script or binary '{}' not found in .bin", name);
+    }
+
+    let mut command = std::process::Command::new("cmd");
+    command.arg("/c").arg(cmd_path).args(args);
+
+    let status = command.status()?;
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
     Ok(())
 }
 
 async fn handle_update(include_pre: bool) -> Result<()> {
     let current_version = env!("CARGO_PKG_VERSION");
-    println!(
-        "Checking for updates... (Current version: {})",
-        current_version
-    );
+    println!("Current version: v{}", current_version);
+    println!("Checking for updates...");
 
     let client = reqwest::Client::builder()
-        .user_agent("kumo-pkg-updater")
+        .user_agent("kumo-pkg-manager")
         .build()?;
 
     let url = if include_pre {
-        "https://api.github.com/repos/jmaxdev/Kumo/releases"
+        "https://api.github.com/repos/jmaxdev/kumo-pkg/releases"
     } else {
-        "https://api.github.com/repos/jmaxdev/Kumo/releases/latest"
+        "https://api.github.com/repos/jmaxdev/kumo-pkg/releases/latest"
     };
 
     let release: serde_json::Value = if include_pre {
-        let releases: Vec<serde_json::Value> = client
-            .get(url)
-            .send()
-            .await?
-            .json()
-            .await?;
+        let releases: Vec<serde_json::Value> = client.get(url).send().await?.json().await?;
         releases
             .first()
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("No releases found"))?
     } else {
-        client
-            .get(url)
-            .send()
-            .await?
-            .json()
-            .await?
+        client.get(url).send().await?.json().await?
     };
 
     let latest_tag = release["tag_name"]
         .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Could not find latest version tag"))?;
+        .ok_or_else(|| anyhow::anyhow!("No tag_name found in release"))?;
     let latest_version = latest_tag.trim_start_matches('v');
 
-    let current_semver = semver::Version::parse(current_version)?;
-    let latest_semver = semver::Version::parse(latest_version)?;
-
-    if latest_semver > current_semver {
-        println!("A new version is available: {}!", latest_tag);
-
-        let os = std::env::consts::OS;
-        let asset_name = match os {
-            "windows" => "kumo-windows.zip",
-            "linux" => "kumo-linux.tar.gz",
-            "macos" => "kumo-macos.tar.gz",
-            _ => anyhow::bail!("Unsupported OS for auto-update"),
-        };
-
-        let asset = release["assets"]
-            .as_array()
-            .ok_or_else(|| anyhow::anyhow!("No assets found in latest release"))?
-            .iter()
-            .find(|a| a["name"] == asset_name)
-            .ok_or_else(|| anyhow::anyhow!("Could not find asset for your OS: {}", asset_name))?;
-
-        let download_url = asset["browser_download_url"].as_str().unwrap();
-
-        let response = client.get(download_url).send().await?;
-        let bytes = response.bytes().await?;
-
-        let tmp_dir = std::env::temp_dir().join("kumo_update");
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-        std::fs::create_dir_all(&tmp_dir)?;
-
-        let exe_name = if os == "windows" { "kumo.exe" } else { "kumo" };
-        let kx_name = if os == "windows" { "kx.exe" } else { "kx" };
-        let exe_path = tmp_dir.join(exe_name);
-        let kx_path = tmp_dir.join(kx_name);
-
-        if asset_name.ends_with(".zip") {
-            let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
-            for i in 0..archive.len() {
-                let mut file = archive.by_index(i)?;
-                if file.name().ends_with(exe_name) {
-                    let mut out = std::fs::File::create(&exe_path)?;
-                    std::io::copy(&mut file, &mut out)?;
-                } else if file.name().ends_with(kx_name) {
-                    let mut out = std::fs::File::create(&kx_path)?;
-                    std::io::copy(&mut file, &mut out)?;
-                }
-            }
-        } else {
-            let tar = flate2::read::GzDecoder::new(std::io::Cursor::new(bytes));
-            let mut archive = tar::Archive::new(tar);
-            for entry in archive.entries()? {
-                let mut entry = entry?;
-                let path = entry.path()?.to_str().unwrap().to_string();
-                if path.ends_with(exe_name) {
-                    entry.unpack(&exe_path)?;
-                } else if path.ends_with(kx_name) {
-                    entry.unpack(&kx_path)?;
-                }
-            }
-        }
-
-        if !exe_path.exists() {
-            anyhow::bail!("Failed to extract kumo binary from update archive");
-        }
-
-        self_replace::self_replace(&exe_path)?;
-
-        if kx_path.exists() {
-            if let Ok(current_exe) = std::env::current_exe() {
-                let current_dir = current_exe.parent().unwrap();
-                let target_kx = current_dir.join(kx_name);
-                if target_kx.exists() {
-                    let _ = std::fs::copy(&kx_path, &target_kx);
-                }
-            }
-        }
-
-        println!("Update successful! Please run 'kumo --version' to verify.");
-    } else {
-        println!("Kumo is already up to date.");
+    if latest_version == current_version {
+        println!("Kumo is already up to date!");
+        return Ok(());
     }
 
+    println!(
+        "A new version is available: v{} -> v{}",
+        current_version, latest_version
+    );
+    println!(
+        "Download URL: {}",
+        release["html_url"].as_str().unwrap_or("")
+    );
+
+    Ok(())
+}
+
+async fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()> {
+    tokio::fs::create_dir_all(&dst).await?;
+    let mut entries = tokio::fs::read_dir(src).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        let ty = entry.file_type().await?;
+        if ty.is_dir() {
+            Box::pin(copy_dir_recursive(
+                &entry.path(),
+                &dst.join(entry.file_name()),
+            ))
+            .await?;
+        } else {
+            tokio::fs::copy(entry.path(), dst.join(entry.file_name())).await?;
+        }
+    }
     Ok(())
 }

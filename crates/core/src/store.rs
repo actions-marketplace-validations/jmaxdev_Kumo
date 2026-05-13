@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
+#[derive(Clone)]
 pub struct Store {
     root: PathBuf,
 }
