@@ -20,9 +20,9 @@ async fn main() -> Result<()> {
     let cli = KxCli::parse();
     let (store, security, resolver) = common::init_components().await?;
 
-    // 1. Try local execution first
+    // 1. Try local execution first (dependencies/.bin)
     let deps_dir_name = common::get_deps_dir();
-    let bin_dir = std::env::current_dir()?.join(&deps_dir_name).join(".bin");
+    let local_bin_dir = std::env::current_dir()?.join(&deps_dir_name).join(".bin");
     
     let possible_bins = if cfg!(target_os = "windows") {
         vec![format!("{}.cmd", cli.binary), format!("{}.exe", cli.binary), format!("{}.bat", cli.binary), cli.binary.clone()]
@@ -30,17 +30,39 @@ async fn main() -> Result<()> {
         vec![cli.binary.clone()]
     };
 
-    for bin_name in possible_bins {
-        let bin_path = bin_dir.join(&bin_name);
+    for bin_name in &possible_bins {
+        let bin_path = local_bin_dir.join(bin_name);
         if bin_path.exists() {
-            // Update access time for GC
-            let _ = filetime::set_file_mtime(&bin_dir, filetime::FileTime::now());
-            return execute_binary(&bin_path, cli.args, &bin_dir);
+            return execute_binary(&bin_path, cli.args, &local_bin_dir);
         }
     }
 
-    // 2. Not found locally, ask to install
-    println!("Package '{}' not found in {}/.bin", cli.binary, deps_dir_name);
+    // 2. Resolve version to check global cache (~/.kumo/kx)
+    let mut root_deps = HashMap::new();
+    root_deps.insert(cli.binary.clone(), "latest".to_string());
+    let lockfile = resolver.resolve_tree(&root_deps).await?;
+    
+    let main_pkg_id = lockfile.packages.keys()
+        .find(|k| k.starts_with(&cli.binary))
+        .ok_or_else(|| anyhow!("Could not find package {} in resolution", cli.binary))?;
+    let version = main_pkg_id.split('@').last().unwrap_or("latest");
+
+    let kx_dir = dirs::home_dir().unwrap().join(".kumo").join("kx").join(format!("{}@{}", cli.binary, version));
+    let global_bin_dir = kx_dir.join(".bin");
+
+    if kx_dir.exists() {
+        for bin_name in &possible_bins {
+            let bin_path = global_bin_dir.join(bin_name);
+            if bin_path.exists() {
+                // Update access time for GC
+                let _ = filetime::set_file_mtime(&kx_dir, filetime::FileTime::now());
+                return execute_binary(&bin_path, cli.args, &global_bin_dir);
+            }
+        }
+    }
+
+    // 3. Not found anywhere, ask to install
+    println!("Package '{}' not found in cache.", cli.binary);
     print!("Do you want to install and execute it using Kumo? (y/N): ");
     use std::io::Write;
     std::io::stdout().flush()?;
@@ -49,7 +71,7 @@ async fn main() -> Result<()> {
     std::io::stdin().read_line(&mut input)?;
 
     if input.trim().to_lowercase() == "y" {
-        let (bin_path, bin_dir) = install_and_get_bin(&store, &resolver, &security, &cli.binary).await?;
+        let (bin_path, bin_dir) = install_and_get_bin_with_lockfile(&store, &resolver, &security, &cli.binary, &lockfile, &kx_dir).await?;
         execute_binary(&bin_path, cli.args, &bin_dir)
     } else {
         anyhow::bail!("Execution cancelled.");
@@ -93,19 +115,14 @@ fn execute_binary(path: &std::path::Path, args: Vec<String>, bin_dir: &std::path
     Ok(())
 }
 
-async fn install_and_get_bin(
+async fn install_and_get_bin_with_lockfile(
     store: &kumo_core::Store,
     resolver: &resolver::Resolver,
     security: &security::SecurityEngine,
     name: &str,
+    lockfile: &Lockfile,
+    kx_dir: &std::path::PathBuf,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf)> {
-    println!("Resolving {}...", name);
-    
-    let mut root_deps = HashMap::new();
-    root_deps.insert(name.to_string(), "latest".to_string());
-    
-    let lockfile = resolver.resolve_tree(&root_deps).await?;
-    
     // Security scan
     println!("Scanning for vulnerabilities...");
     for (pkg_name, pkg) in &lockfile.packages {
@@ -119,16 +136,9 @@ async fn install_and_get_bin(
         }
     }
 
-    // Get the actual version of the main package from lockfile
-    let main_pkg_id = lockfile.packages.keys()
-        .find(|k| k.starts_with(name))
-        .ok_or_else(|| anyhow!("Could not find package {} in resolution", name))?;
-    let version = main_pkg_id.split('@').last().unwrap_or("latest");
-
-    let kx_dir = dirs::home_dir().unwrap().join(".kumo").join("kx").join(format!("{}@{}", name, version));
     let bin_dir = kx_dir.join(".bin");
     let nm_dir = kx_dir.join("node_modules");
-    
+
     if !kx_dir.exists() {
         println!("Installing {} and dependencies...", name);
         tokio::fs::create_dir_all(&bin_dir).await?;
@@ -148,15 +158,12 @@ async fn install_and_get_bin(
             
             // Download and extract using streaming
             let client = reqwest::Client::new();
-            let stream = client.get(&pkg.resolution.tarball)
-                .send()
-                .await?
-                .bytes_stream();
+            let response = client.get(&pkg.resolution.tarball).send().await?;
+            let bytes = response.bytes().await?;
             
-            let file_map = kumo_core::tarball::extract_streaming(store, stream).await?;
-            kumo_core::package::link_package(store, &dest, &file_map).await?;
+            kumo_core::tarball::extract_streaming(std::io::Cursor::new(bytes), &dest).await?;
             
-            // Create bins
+            // Create shims if it has binaries
             if let Some(bin) = &pkg.bin {
                 match bin {
                     serde_json::Value::String(path) => {
@@ -175,24 +182,22 @@ async fn install_and_get_bin(
         }
     }
 
-    let bin_path = bin_dir.join(name);
-    let bin_path_cmd = bin_dir.join(format!("{}.cmd", name));
-    
-    if bin_path_cmd.exists() {
-        Ok((bin_path_cmd, bin_dir))
-    } else if bin_path.exists() {
-        Ok((bin_path, bin_dir))
+    // Try to find the binary path in the newly installed package
+    let possible_bins = if cfg!(target_os = "windows") {
+        vec![format!("{}.cmd", name), format!("{}.exe", name), format!("{}.bat", name), name.to_string()]
     } else {
-        // Find ANY bin in that directory if the name doesn't match exactly
-        let mut entries = tokio::fs::read_dir(&bin_dir).await?;
-        if let Some(entry) = entries.next_entry().await? {
-            Ok((entry.path(), bin_dir))
-        } else {
-            anyhow::bail!("No binary found after installation of {}", name)
+        vec![name.to_string()]
+    };
+
+    for bin_name in possible_bins {
+        let bin_path = bin_dir.join(bin_name);
+        if bin_path.exists() {
+            return Ok((bin_path, bin_dir));
         }
     }
-}
 
+    anyhow::bail!("Binary '{}' not found after installation", name)
+}
 async fn create_shim(
     bin_dir: &std::path::Path,
     name: &str,
