@@ -115,9 +115,11 @@ fn execute_binary(path: &std::path::Path, args: Vec<String>, bin_dir: &std::path
     Ok(())
 }
 
+use resolver::{Lockfile, Resolver};
+
 async fn install_and_get_bin_with_lockfile(
     store: &kumo_core::Store,
-    resolver: &resolver::Resolver,
+    _resolver: &Resolver,
     security: &security::SecurityEngine,
     name: &str,
     lockfile: &Lockfile,
@@ -156,12 +158,13 @@ async fn install_and_get_bin_with_lockfile(
             };
             let dest = nm_dir.join(pkg_name.replace('/', std::path::MAIN_SEPARATOR_STR));
             
-            // Download and extract using streaming
+            // Download and extract
             let client = reqwest::Client::new();
             let response = client.get(&pkg.resolution.tarball).send().await?;
             let bytes = response.bytes().await?;
             
-            kumo_core::tarball::extract_streaming(std::io::Cursor::new(bytes), &dest).await?;
+            let file_map = kumo_core::tarball::extract_and_store(store, &bytes).await?;
+            kumo_core::package::link_package(store, &dest, &file_map).await?;
             
             // Create shims if it has binaries
             if let Some(bin) = &pkg.bin {
@@ -172,7 +175,7 @@ async fn install_and_get_bin_with_lockfile(
                     serde_json::Value::Object(map) => {
                         for (cmd_name, path) in map {
                             if let Some(p) = path.as_str() {
-                                create_shim(&bin_dir, cmd_name, &dest.join(p)).await?;
+                                create_shim(&bin_dir, &cmd_name, &dest.join(p)).await?;
                             }
                         }
                     }
