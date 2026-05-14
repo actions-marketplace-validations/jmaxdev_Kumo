@@ -18,8 +18,23 @@ mod common;
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = KxCli::parse();
+    let update_check_handle = tokio::spawn(common::check_for_new_version());
+    
     let (store, security, resolver) = common::init_components().await?;
+    let res = inner_main(cli, &store, &security, &resolver).await;
 
+    if let Ok(Some(new_version)) = update_check_handle.await {
+        let current_version = env!("CARGO_PKG_VERSION");
+        println!("\n\x1b[33m┌─────────────────────────────────────────────────────────┐\x1b[0m");
+        println!("\x1b[33m│\x1b[0m  New version of Kumo available: \x1b[32mv{}\x1b[0m -> \x1b[32mv{}\x1b[0m       \x1b[33m│\x1b[0m", current_version, new_version);
+        println!("\x1b[33m│\x1b[0m  Run \x1b[36mkumo update\x1b[0m to upgrade!                          \x1b[33m│\x1b[0m");
+        println!("\x1b[33m└─────────────────────────────────────────────────────────┘\x1b[0m\n");
+    }
+
+    res
+}
+
+async fn inner_main(cli: KxCli, store: &kumo_core::Store, security: &security::SecurityEngine, resolver: &Resolver) -> Result<()> {
     // 1. Try local execution first (dependencies/.bin)
     let deps_dir_name = common::get_deps_dir();
     let local_bin_dir = std::env::current_dir()?.join(&deps_dir_name).join(".bin");
@@ -71,7 +86,7 @@ async fn main() -> Result<()> {
     std::io::stdin().read_line(&mut input)?;
 
     if input.trim().to_lowercase() == "y" {
-        let (bin_path, bin_dir) = install_and_get_bin_with_lockfile(&store, &resolver, &security, &cli.binary, &lockfile, &kx_dir).await?;
+        let (bin_path, bin_dir) = install_and_get_bin_with_lockfile(store, resolver, security, &cli.binary, &lockfile, &kx_dir).await?;
         execute_binary(&bin_path, cli.args, &bin_dir)
     } else {
         anyhow::bail!("Execution cancelled.");

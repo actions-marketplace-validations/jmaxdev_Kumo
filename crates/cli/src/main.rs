@@ -99,6 +99,13 @@ mod common;
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    
+    let update_check_handle = if !matches!(cli.command, Commands::Update { .. }) {
+        Some(tokio::spawn(common::check_for_new_version()))
+    } else {
+        None
+    };
+
     let (store, security, resolver) = common::init_components().await?;
 
     let kumo_json_path = std::env::current_dir()?.join("kumo.json");
@@ -414,6 +421,16 @@ async fn main() -> Result<()> {
             let script_name = &args[0];
             let script_args = &args[1..];
             run_script(script_name, script_args.to_vec()).await?;
+        }
+    }
+
+    if let Some(handle) = update_check_handle {
+        if let Ok(Some(new_version)) = handle.await {
+            let current_version = env!("CARGO_PKG_VERSION");
+            println!("\n\x1b[33m┌─────────────────────────────────────────────────────────┐\x1b[0m");
+            println!("\x1b[33m│\x1b[0m  New version of Kumo available: \x1b[32mv{}\x1b[0m -> \x1b[32mv{}\x1b[0m       \x1b[33m│\x1b[0m", current_version, new_version);
+            println!("\x1b[33m│\x1b[0m  Run \x1b[36mkumo update\x1b[0m to upgrade!                          \x1b[33m│\x1b[0m");
+            println!("\x1b[33m└─────────────────────────────────────────────────────────┘\x1b[0m\n");
         }
     }
 
