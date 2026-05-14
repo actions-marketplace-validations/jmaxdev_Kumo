@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use clap::Parser;
 use std::collections::HashMap;
 use std::process::Command;
@@ -101,17 +101,13 @@ async fn install_and_get_bin(
     let mut root_deps = HashMap::new();
     root_deps.insert(name.to_string(), "latest".to_string());
     
-    let lockfile = resolver.resolve_tree(root_deps).await?;
+    let lockfile = resolver.resolve_tree(&root_deps).await?;
     
     // Security scan
     println!("Scanning for vulnerabilities...");
     for (pkg_name, pkg) in &lockfile.packages {
         let version = pkg.resolution.tarball.split('/').last().unwrap_or("");
-        // Simple version extraction from tarball URL as fallback if needed
-        // but resolve_tree should ideally give us versions. 
-        // For kx, we'll just check the main package for now to be fast, 
-        // but a full scan is better.
-        let vulns = security.check_vulnerabilities(pkg_name, "latest").await?;
+        let vulns = security.check_vulnerabilities(pkg_name, version).await?;
         if !vulns.is_empty() {
             println!("Warning: Vulnerabilities found in {}:", pkg_name);
             for v in vulns {
