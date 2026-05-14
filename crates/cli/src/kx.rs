@@ -125,7 +125,16 @@ async fn install_and_get_bin(
         tokio::fs::create_dir_all(&bin_dir).await?;
         
         for (pkg_id, pkg) in &lockfile.packages {
-            let pkg_name = pkg_id.split('@').next().unwrap_or(pkg_id);
+            let pkg_name = if pkg_id.starts_with('@') {
+                let parts: Vec<&str> = pkg_id.split('@').collect();
+                if parts.len() > 1 {
+                    format!("@{}", parts[1])
+                } else {
+                    pkg_id.to_string()
+                }
+            } else {
+                pkg_id.split('@').next().unwrap_or(pkg_id).to_string()
+            };
             let dest = nm_dir.join(pkg_name.replace('/', std::path::MAIN_SEPARATOR_STR));
             
             // Download and extract using streaming
