@@ -17,16 +17,25 @@ fi
 
 mkdir -p "$INSTALL_DIR"
 
+TEMP_DIR=$(mktemp -d)
 echo "Downloading $FILENAME..."
-curl -L "$REPO_URL/$FILENAME" -o "/tmp/$FILENAME"
+curl -L "$REPO_URL/$FILENAME" -o "$TEMP_DIR/$FILENAME"
 
 echo "Extracting..."
-tar -xzf "/tmp/$FILENAME" -C "$INSTALL_DIR"
+tar -xzf "$TEMP_DIR/$FILENAME" -C "$TEMP_DIR"
+
+# Find and move binaries regardless of structure
+find "$TEMP_DIR" -type f \( -name "kumo" -o -name "kx" \) -exec mv {} "$INSTALL_DIR/" \;
 
 chmod +x "$INSTALL_DIR/kumo"
 chmod +x "$INSTALL_DIR/kx"
 
-echo "Kumo installed successfully in $INSTALL_DIR"
+# Cleanup
+rm -rf "$TEMP_DIR"
+
+echo "Kumo and KX installed successfully in $INSTALL_DIR"
 echo ""
-echo "Add this to your .bashrc or .zshrc:"
-echo "export PATH=\"\$PATH:\$HOME/.kumo/bin\""
+if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+    echo "Add this to your .bashrc, .zshrc or .profile:"
+    echo "export PATH=\"\$PATH:$INSTALL_DIR\""
+fi
