@@ -82,6 +82,10 @@ enum PruneSubcommand {
         #[arg(long)]
         full: bool,
     },
+    Kx {
+        #[arg(long)]
+        full: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -950,6 +954,43 @@ async fn prune_store(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
                 }
             }
         }
+        PruneSubcommand::Kx { full } => {
+            let kx_root = dirs::home_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join(".kumo")
+                .join("kx");
+            if !kx_root.exists() {
+                println!("KX cache is already empty.");
+                return Ok(());
+            }
+
+            if full {
+                println!("Performing FULL prune of KX cache...");
+                std::fs::remove_dir_all(&kx_root)?;
+                std::fs::create_dir_all(&kx_root)?;
+                println!("KX cache cleared.");
+            } else {
+                println!("Pruning old KX packages (older than 7 days)...");
+                let mut count = 0;
+                let entries = std::fs::read_dir(&kx_root)?;
+                let now = std::time::SystemTime::now();
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        if let Ok(metadata) = std::fs::metadata(&path) {
+                            let accessed = metadata.accessed().unwrap_or_else(|_| {
+                                metadata.modified().unwrap_or(now)
+                            });
+                            if now.duration_since(accessed).map(|d| d.as_secs() > 7 * 24 * 3600).unwrap_or(false) {
+                                let _ = std::fs::remove_dir_all(&path);
+                                count += 1;
+                            }
+                        }
+                    }
+                }
+                println!("Removed {} old KX packages.", count);
+            }
+        }
     }
     Ok(())
 }
@@ -1256,7 +1297,11 @@ async fn handle_update(include_pre: bool) -> Result<()> {
                     let kx_path = exe_dir.join(kx_bin_name);
                     let nested_kx = temp_dir.join("bin").join(kx_bin_name);
                     if kx_path.exists() && nested_kx.exists() {
-                        let _ = self_replace::action_replace(&kx_path, &nested_kx);
+                        // Use rename-then-copy to handle binaries in use (Windows)
+                        let temp_old = kx_path.with_extension("old");
+                        let _ = std::fs::rename(&kx_path, &temp_old);
+                        let _ = std::fs::copy(&nested_kx, &kx_path);
+                        let _ = std::fs::remove_file(temp_old);
                     }
                 }
             }
@@ -1272,7 +1317,11 @@ async fn handle_update(include_pre: bool) -> Result<()> {
             if let Some(exe_dir) = current_exe.parent() {
                 let kx_path = exe_dir.join(kx_bin_name);
                 if kx_path.exists() && new_kx.exists() {
-                    let _ = self_replace::action_replace(&kx_path, &new_kx);
+                    // Use rename-then-copy to handle binaries in use (Windows)
+                    let temp_old = kx_path.with_extension("old");
+                    let _ = std::fs::rename(&kx_path, &temp_old);
+                    let _ = std::fs::copy(&new_kx, &kx_path);
+                    let _ = std::fs::remove_file(temp_old);
                 }
             }
         }

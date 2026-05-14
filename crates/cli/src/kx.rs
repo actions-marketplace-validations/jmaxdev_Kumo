@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::Parser;
 use std::collections::HashMap;
 use std::process::Command;
@@ -33,6 +33,8 @@ async fn main() -> Result<()> {
     for bin_name in possible_bins {
         let bin_path = bin_dir.join(&bin_name);
         if bin_path.exists() {
+            // Update access time for GC
+            let _ = filetime::set_file_mtime(&bin_dir, filetime::FileTime::now());
             return execute_binary(&bin_path, cli.args, &bin_dir);
         }
     }
@@ -117,7 +119,13 @@ async fn install_and_get_bin(
         }
     }
 
-    let kx_dir = dirs::home_dir().unwrap().join(".kumo").join("kx").join(name);
+    // Get the actual version of the main package from lockfile
+    let main_pkg_id = lockfile.packages.keys()
+        .find(|k| k.starts_with(name))
+        .ok_or_else(|| anyhow!("Could not find package {} in resolution", name))?;
+    let version = main_pkg_id.split('@').last().unwrap_or("latest");
+
+    let kx_dir = dirs::home_dir().unwrap().join(".kumo").join("kx").join(format!("{}@{}", name, version));
     let bin_dir = kx_dir.join(".bin");
     let nm_dir = kx_dir.join("node_modules");
     
