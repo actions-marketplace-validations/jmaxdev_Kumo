@@ -151,7 +151,7 @@ async fn install_and_get_bin(
             if let Some(bin) = &pkg.bin {
                 match bin {
                     serde_json::Value::String(path) => {
-                        create_shim(&bin_dir, pkg_name, &dest.join(path)).await?;
+                        create_shim(&bin_dir, &pkg_name, &dest.join(path)).await?;
                     }
                     serde_json::Value::Object(map) => {
                         for (cmd_name, path) in map {
