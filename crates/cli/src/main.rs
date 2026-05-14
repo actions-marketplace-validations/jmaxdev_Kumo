@@ -67,6 +67,7 @@ enum Commands {
     Update {
         #[arg(long)]
         pre: bool,
+        version: Option<String>,
     },
     #[command(external_subcommand)]
     External(Vec<String>),
@@ -392,9 +393,7 @@ async fn main() -> Result<()> {
             println!("Executing '{}' in Kumo Sandbox...", script);
             run_script(&script, vec![]).await?;
         }
-        Commands::Update { pre } => {
-            handle_update(pre).await?;
-        }
+        Commands::Update { pre, version } => handle_update(pre, version).await?,
         Commands::Config { subcommand } => match subcommand {
             ConfigSubcommand::Init => {
                 let config_path = std::env::current_dir()?.join("kumo.config.json");
@@ -1169,16 +1168,23 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
     anyhow::bail!("Script or binary '{}' not found in configuration or .bin", name);
 }
 
-async fn handle_update(include_pre: bool) -> Result<()> {
-    let current_version = env!("CARGO_PKG_VERSION");
-    println!("Current version: v{}", current_version);
-    println!("Checking for updates...");
 
+async fn handle_update(include_pre: bool, target_version: Option<String>) -> Result<()> {
+    let current_version = env!("CARGO_PKG_VERSION");
+    
+    if let Some(v) = &target_version {
+        println!("Checking for version {}...", v);
+    } else if include_pre {
+        println!("Checking for latest pre-release...");
+    } else {
+        println!("Checking for latest stable release...");
+    }
+    
     let client = reqwest::Client::builder()
         .user_agent("kumo-pkg-manager")
         .build()?;
 
-    let url = if include_pre {
+    let url = if include_pre || target_version.is_some() {
         "https://api.github.com/repos/jmaxdev/kumo/releases"
     } else {
         "https://api.github.com/repos/jmaxdev/kumo/releases/latest"
@@ -1194,14 +1200,41 @@ async fn handle_update(include_pre: bool) -> Result<()> {
     }
 
     let release_val: serde_json::Value = response.json().await?;
-    let release: serde_json::Value = if include_pre {
-        if let Some(arr) = release_val.as_array() {
-            arr.first()
-                .cloned()
-                .ok_or_else(|| anyhow::anyhow!("No releases found in repository."))?
-        } else {
-            release_val
+    let release: serde_json::Value = if include_pre || target_version.is_some() {
+        let releases = release_val.as_array()
+            .ok_or_else(|| anyhow::anyhow!("Expected array of releases from GitHub API"))?;
+        
+        let mut best_match = None;
+        let mut max_version = semver::Version::parse("0.0.0").unwrap();
+
+        for rel in releases {
+            if let Some(tag) = rel["tag_name"].as_str() {
+                let version_str = tag.strip_prefix('v').unwrap_or(tag);
+                
+                if let Some(target) = &target_version {
+                    let target_lower = target.to_lowercase();
+                    if target_lower == "alpha" || target_lower == "beta" || target_lower == "rc" {
+                        if version_str.contains(&target_lower) {
+                            if let Ok(v) = semver::Version::parse(version_str) {
+                                if v > max_version {
+                                    max_version = v;
+                                    best_match = Some(rel.clone());
+                                }
+                            }
+                        }
+                    } else if version_str == target || tag == target {
+                        best_match = Some(rel.clone());
+                        break;
+                    }
+                } else if let Ok(v) = semver::Version::parse(version_str) {
+                    if v > max_version {
+                        max_version = v;
+                        best_match = Some(rel.clone());
+                    }
+                }
+            }
         }
+        best_match.ok_or_else(|| anyhow::anyhow!("No matching release found for: {}", target_version.as_deref().unwrap_or("latest")))?
     } else {
         release_val
     };
@@ -1212,17 +1245,11 @@ async fn handle_update(include_pre: bool) -> Result<()> {
 
     let latest_tag = release["tag_name"]
         .as_str()
-        .ok_or_else(|| {
-            if !include_pre {
-                anyhow::anyhow!("No stable release found. Use 'kumo update --pre' for latest development versions.")
-            } else {
-                anyhow::anyhow!("Could not find version information in the latest release.")
-            }
-        })?;
+        .ok_or_else(|| anyhow::anyhow!("Could not find version information in the release."))?;
     let latest_version = latest_tag.trim_start_matches('v');
 
-    if latest_version == current_version {
-        println!("Kumo is already up to date!");
+    if target_version.is_none() && latest_version == current_version {
+        println!("Kumo is already up to date (v{})!", current_version);
         return Ok(());
     }
 
