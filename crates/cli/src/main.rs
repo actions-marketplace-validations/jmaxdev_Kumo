@@ -1255,6 +1255,9 @@ async fn handle_update(include_pre: bool) -> Result<()> {
     let bytes = response.bytes().await?;
 
     let temp_dir = std::env::temp_dir().join("kumo_update");
+    if temp_dir.exists() {
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
     std::fs::create_dir_all(&temp_dir)?;
     
     let kumo_bin_name = if cfg!(target_os = "windows") { "kumo.exe" } else { "kumo" };
@@ -1281,55 +1284,51 @@ async fn handle_update(include_pre: bool) -> Result<()> {
         archive.unpack(&temp_dir)?;
     };
 
-    let new_kumo = temp_dir.join(kumo_bin_name);
-    let new_kx = temp_dir.join(kx_bin_name);
+    // Robust binary discovery: search everywhere in temp_dir
+    let mut found_kumo = None;
+    let mut found_kx = None;
 
-    if !new_kumo.exists() {
-        // Archives might have a nested 'bin' directory based on CI
-        let nested_kumo = temp_dir.join("bin").join(kumo_bin_name);
-        if nested_kumo.exists() {
-            println!("Applying update...");
-            self_replace::self_replace(&nested_kumo)?;
-            
-            // Try to update kx
-            if let Ok(current_exe) = std::env::current_exe() {
-                if let Some(exe_dir) = current_exe.parent() {
-                    let kx_path = exe_dir.join(kx_bin_name);
-                    let nested_kx = temp_dir.join("bin").join(kx_bin_name);
-                    if kx_path.exists() && nested_kx.exists() {
-                        // Use rename-then-copy to handle binaries in use (Windows)
-                        let temp_old = kx_path.with_extension("old");
-                        let _ = std::fs::rename(&kx_path, &temp_old);
-                        let _ = std::fs::copy(&nested_kx, &kx_path);
-                        let _ = std::fs::remove_file(temp_old);
-                    }
+    fn find_binaries(dir: &std::path::Path, kumo_name: &str, kx_name: &str, kumo: &mut Option<std::path::PathBuf>, kx: &mut Option<std::path::PathBuf>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    find_binaries(&path, kumo_name, kx_name, kumo, kx);
+                } else if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                    if name == kumo_name { *kumo = Some(path); }
+                    else if name == kx_name { *kx = Some(path); }
                 }
             }
-        } else {
-            anyhow::bail!("Binary '{}' not found in update archive", kumo_bin_name);
         }
-    } else {
-        println!("Applying update...");
-        self_replace::self_replace(&new_kumo)?;
-        
-        // Try to update kx
+    }
+
+    find_binaries(&temp_dir, kumo_bin_name, kx_bin_name, &mut found_kumo, &mut found_kx);
+
+    let kumo_src = found_kumo.ok_or_else(|| anyhow::anyhow!("Binary '{}' not found in update archive", kumo_bin_name))?;
+    
+    println!("Applying update for Kumo...");
+    self_replace::self_replace(&kumo_src)?;
+
+    if let Some(kx_src) = found_kx {
         if let Ok(current_exe) = std::env::current_exe() {
             if let Some(exe_dir) = current_exe.parent() {
-                let kx_path = exe_dir.join(kx_bin_name);
-                if kx_path.exists() && new_kx.exists() {
-                    // Use rename-then-copy to handle binaries in use (Windows)
-                    let temp_old = kx_path.with_extension("old");
-                    let _ = std::fs::rename(&kx_path, &temp_old);
-                    let _ = std::fs::copy(&new_kx, &kx_path);
-                    let _ = std::fs::remove_file(temp_old);
+                let kx_dest = exe_dir.join(kx_bin_name);
+                if kx_dest.exists() {
+                    println!("Applying update for KX...");
+                    let temp_old = kx_dest.with_extension("old_kx");
+                    let _ = std::fs::rename(&kx_dest, &temp_old);
+                    if std::fs::copy(&kx_src, &kx_dest).is_ok() {
+                        let _ = std::fs::remove_file(temp_old);
+                    } else {
+                        let _ = std::fs::rename(&temp_old, &kx_dest);
+                        println!("Warning: Failed to update KX.");
+                    }
                 }
             }
         }
     }
     
-    // Clean up
     let _ = std::fs::remove_dir_all(&temp_dir);
-
     println!("Successfully updated to v{}!", latest_version);
     Ok(())
 }
