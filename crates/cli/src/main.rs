@@ -111,15 +111,16 @@ async fn main() -> Result<()> {
     let kumo_json_path = std::env::current_dir()?.join("kumo.json");
     let pkg_json_path = std::env::current_dir()?.join("package.json");
     let config_path = if kumo_json_path.exists() {
-        kumo_json_path
+        Some(kumo_json_path)
     } else if pkg_json_path.exists() {
-        pkg_json_path
+        Some(pkg_json_path)
     } else {
-        anyhow::bail!("Neither kumo.json nor package.json found in current directory");
+        None
     };
 
     match cli.command {
         Commands::Install { log } => {
+            let config_path = config_path.ok_or_else(|| anyhow::anyhow!("Neither kumo.json nor package.json found in current directory"))?;
             println!("Reading configuration...");
             let config_content: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(&config_path)?)?;
@@ -153,6 +154,7 @@ async fn main() -> Result<()> {
             if global {
                 install_global(&store, &resolver, &security, name).await?;
             } else {
+                let config_path = config_path.ok_or_else(|| anyhow::anyhow!("Neither kumo.json nor package.json found in current directory"))?;
                 println!("Adding {} to configuration...", name);
                 let mut config_content: serde_json::Value =
                     serde_json::from_str(&std::fs::read_to_string(&config_path)?)?;
@@ -183,6 +185,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::Remove { name } => {
+            let config_path = config_path.ok_or_else(|| anyhow::anyhow!("Neither kumo.json nor package.json found in current directory"))?;
             println!("Removing {}...", name);
             let mut config_content: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(&config_path)?)?;
