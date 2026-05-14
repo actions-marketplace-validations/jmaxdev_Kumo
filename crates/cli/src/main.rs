@@ -1216,37 +1216,67 @@ async fn handle_update(include_pre: bool) -> Result<()> {
     let temp_dir = std::env::temp_dir().join("kumo_update");
     std::fs::create_dir_all(&temp_dir)?;
     
-    let bin_path = if asset_name.ends_with(".zip") {
+    let kumo_bin_name = if cfg!(target_os = "windows") { "kumo.exe" } else { "kumo" };
+    let kx_bin_name = if cfg!(target_os = "windows") { "kx.exe" } else { "kx" };
+
+    if asset_name.ends_with(".zip") {
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
-        let target_name = if archive.file_names().any(|n| n == "kumo.exe") {
-            "kumo.exe"
-        } else {
-            "kumo"
-        };
-        let mut file = archive.by_name(target_name)?;
-        let out_path = temp_dir.join(file.name());
-        let mut out_file = std::fs::File::create(&out_path)?;
-        std::io::copy(&mut file, &mut out_file)?;
-        out_path
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i)?;
+            let out_path = temp_dir.join(file.name());
+            if file.is_dir() {
+                std::fs::create_dir_all(&out_path)?;
+            } else {
+                if let Some(p) = out_path.parent() {
+                    std::fs::create_dir_all(p)?;
+                }
+                let mut out_file = std::fs::File::create(&out_path)?;
+                std::io::copy(&mut file, &mut out_file)?;
+            }
+        }
     } else {
         let tar = flate2::read::GzDecoder::new(std::io::Cursor::new(bytes));
         let mut archive = tar::Archive::new(tar);
-        let mut bin_path = None;
-        for entry in archive.entries()? {
-            let mut entry = entry?;
-            let path = entry.path()?.to_path_buf();
-            if path.file_name().and_then(|s| s.to_str()) == Some("kumo") {
-                let out_path = temp_dir.join("kumo");
-                entry.unpack(&out_path)?;
-                bin_path = Some(out_path);
-                break;
-            }
-        }
-        bin_path.ok_or_else(|| anyhow::anyhow!("Binary 'kumo' not found in archive"))?
+        archive.unpack(&temp_dir)?;
     };
 
-    println!("Applying update...");
-    self_replace::self_replace(&bin_path)?;
+    let new_kumo = temp_dir.join(kumo_bin_name);
+    let new_kx = temp_dir.join(kx_bin_name);
+
+    if !new_kumo.exists() {
+        // Archives might have a nested 'bin' directory based on CI
+        let nested_kumo = temp_dir.join("bin").join(kumo_bin_name);
+        if nested_kumo.exists() {
+            println!("Applying update...");
+            self_replace::self_replace(&nested_kumo)?;
+            
+            // Try to update kx
+            if let Ok(current_exe) = std::env::current_exe() {
+                if let Some(exe_dir) = current_exe.parent() {
+                    let kx_path = exe_dir.join(kx_bin_name);
+                    let nested_kx = temp_dir.join("bin").join(kx_bin_name);
+                    if kx_path.exists() && nested_kx.exists() {
+                        let _ = self_replace::action_replace(&kx_path, &nested_kx);
+                    }
+                }
+            }
+        } else {
+            anyhow::bail!("Binary '{}' not found in update archive", kumo_bin_name);
+        }
+    } else {
+        println!("Applying update...");
+        self_replace::self_replace(&new_kumo)?;
+        
+        // Try to update kx
+        if let Ok(current_exe) = std::env::current_exe() {
+            if let Some(exe_dir) = current_exe.parent() {
+                let kx_path = exe_dir.join(kx_bin_name);
+                if kx_path.exists() && new_kx.exists() {
+                    let _ = self_replace::action_replace(&kx_path, &new_kx);
+                }
+            }
+        }
+    }
     
     // Clean up
     let _ = std::fs::remove_dir_all(&temp_dir);
