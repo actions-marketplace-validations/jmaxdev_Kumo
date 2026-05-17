@@ -17,6 +17,16 @@ mod common;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Intercept the first Ctrl-C so that child processes (like cmd.exe) can handle it,
+    // preventing the terminal from getting bugged with overlapping prompts.
+    tokio::spawn(async {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                std::process::exit(1);
+            }
+        }
+    });
+
     let cli = KxCli::parse();
     let update_check_handle = tokio::spawn(common::check_for_new_version());
     
