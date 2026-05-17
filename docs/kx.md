@@ -25,3 +25,12 @@ Run a tool without installing it permanently:
 ```bash
 kx cowsay "Hello Kumo!"
 ```
+
+Initialize a new project using a "create" package:
+```bash
+# Automatically resolves to the "create-vite" package
+kx create vite
+
+# Automatically resolves to the "@sveltejs/create" package
+kx create @sveltejs
+```

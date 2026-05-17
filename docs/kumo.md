@@ -22,11 +22,12 @@ Kumo uses a space-efficient approach to dependency management. By default, it st
 
 ### Dependency Directory Detection
 Kumo automatically detects where to link your dependencies:
-1. If a `node_modules` directory already exists, Kumo will use it.
-2. Otherwise, it defaults to a `dependencies` directory.
+1. **Configuration Setting**: If you add `"useNodeModules": true` to your `kumo.config.json`, Kumo will natively use `node_modules`. This is highly recommended for full compatibility with modern ESM tools (like Vite, Next.js, etc).
+2. **Existing Directory**: If a `node_modules` directory already exists, Kumo will automatically use it.
+3. **Default Behavior**: If neither condition is met, Kumo defaults to creating a `dependencies` directory.
 
 > [!TIP]
-> If Kumo creates a `dependencies` directory for the first time, it will automatically attempt to add it to your `.gitignore` file.
+> Whichever directory Kumo creates for the first time (`node_modules` or `dependencies`), it will automatically attempt to add it to your `.gitignore` file.
 
 ## Commands
 
