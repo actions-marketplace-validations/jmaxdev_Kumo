@@ -154,6 +154,17 @@ Generates a default `kumo.config.json` file in the current directory.
 kumo config init
 ```
 
+#### `config default <setting> <value>`
+Sets a global default configuration in `~/.kumo/kumo.config.json`. These values will be used across all your Kumo projects unless overridden by a local `kumo.config.json`.
+
+```bash
+# Enable Node.js module resolution natively for all projects
+kumo config default useNodeModules true
+
+# Disable blocking of deprecated packages globally
+kumo config default block_deprecated false
+```
+
 ### `update [--pre]`
 Checks for and installs the latest version of the Kumo CLI from GitHub.
 - `--pre`: Includes pre-releases (alpha, beta, rc) in the update search.

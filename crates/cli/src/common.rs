@@ -16,13 +16,34 @@ pub async fn init_components() -> Result<(Store, SecurityEngine, Resolver)> {
     let store = Store::new(store_path);
     store.init().await?;
 
-    let config_path = std::env::current_dir()?.join("kumo.config.json");
-    let policy = if config_path.exists() {
-        let content = std::fs::read_to_string(config_path)?;
-        serde_json::from_str(&content)?
-    } else {
-        Policy::default()
-    };
+    let mut config_json = serde_json::to_value(Policy::default())?;
+
+    let global_config_path = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".kumo")
+        .join("kumo.config.json");
+    if let Ok(content) = std::fs::read_to_string(&global_config_path) {
+        if let Ok(global_val) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(obj) = global_val.as_object() {
+                for (k, v) in obj {
+                    config_json[k] = v.clone();
+                }
+            }
+        }
+    }
+
+    let local_config_path = std::env::current_dir()?.join("kumo.config.json");
+    if let Ok(content) = std::fs::read_to_string(&local_config_path) {
+        if let Ok(local_val) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(obj) = local_val.as_object() {
+                for (k, v) in obj {
+                    config_json[k] = v.clone();
+                }
+            }
+        }
+    }
+
+    let policy: Policy = serde_json::from_value(config_json)?;
 
     let security = SecurityEngine::new(policy);
     let resolver = Resolver::new();
@@ -32,11 +53,24 @@ pub async fn init_components() -> Result<(Store, SecurityEngine, Resolver)> {
 
 pub fn get_deps_dir() -> String {
     let mut use_node_modules = false;
+    let mut local_set = false;
 
     if let Ok(content) = std::fs::read_to_string("kumo.config.json") {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-            if v["useNodeModules"].as_bool().unwrap_or(false) {
-                use_node_modules = true;
+            if let Some(b) = v["useNodeModules"].as_bool() {
+                use_node_modules = b;
+                local_set = true;
+            }
+        }
+    }
+
+    if !local_set {
+        if let Some(home) = dirs::home_dir() {
+            let global_path = home.join(".kumo").join("kumo.config.json");
+            if let Ok(content) = std::fs::read_to_string(global_path) {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+                    use_node_modules = v["useNodeModules"].as_bool().unwrap_or(false);
+                }
             }
         }
     }
