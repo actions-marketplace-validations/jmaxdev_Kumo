@@ -31,7 +31,17 @@ pub async fn init_components() -> Result<(Store, SecurityEngine, Resolver)> {
 }
 
 pub fn get_deps_dir() -> String {
-    if std::path::Path::new("node_modules").exists() {
+    let mut use_node_modules = false;
+
+    if let Ok(content) = std::fs::read_to_string("kumo.config.json") {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+            if v["useNodeModules"].as_bool().unwrap_or(false) {
+                use_node_modules = true;
+            }
+        }
+    }
+
+    if use_node_modules || std::path::Path::new("node_modules").exists() {
         "node_modules".to_string()
     } else {
         "dependencies".to_string()

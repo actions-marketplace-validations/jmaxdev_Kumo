@@ -34,7 +34,27 @@ async fn main() -> Result<()> {
     res
 }
 
-async fn inner_main(cli: KxCli, store: &kumo_core::Store, security: &security::SecurityEngine, resolver: &Resolver) -> Result<()> {
+async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &security::SecurityEngine, resolver: &Resolver) -> Result<()> {
+    // Intercept "create" command
+    if cli.binary == "create" {
+        if cli.args.is_empty() {
+            anyhow::bail!("'create' requires a package name. Example: kx create vite");
+        }
+        let target = cli.args.remove(0);
+        
+        if target.starts_with('@') {
+            if let Some(slash_idx) = target.find('/') {
+                let (scope, name) = target.split_at(slash_idx);
+                let name = &name[1..];
+                cli.binary = format!("{}/create-{}", scope, name);
+            } else {
+                cli.binary = format!("{}/create", target);
+            }
+        } else {
+            cli.binary = format!("create-{}", target);
+        }
+    }
+
     // 1. Try local execution first (dependencies/.bin)
     let deps_dir_name = common::get_deps_dir();
     let local_bin_dir = std::env::current_dir()?.join(&deps_dir_name).join(".bin");
@@ -62,11 +82,48 @@ async fn inner_main(cli: KxCli, store: &kumo_core::Store, security: &security::S
         .ok_or_else(|| anyhow!("Could not find package {} in resolution", cli.binary))?;
     let version = main_pkg_id.split('@').last().unwrap_or("latest");
 
+    let mut exec_bin_name = cli.binary.clone();
+    if let Some(pkg) = lockfile.packages.get(main_pkg_id) {
+        if let Some(bin) = &pkg.bin {
+            match bin {
+                serde_json::Value::String(_) => {
+                    if exec_bin_name.contains('/') {
+                        exec_bin_name = exec_bin_name.split('/').last().unwrap().to_string();
+                    }
+                }
+                serde_json::Value::Object(map) => {
+                    let un_scoped = if exec_bin_name.contains('/') {
+                        exec_bin_name.split('/').last().unwrap().to_string()
+                    } else {
+                        exec_bin_name.clone()
+                    };
+
+                    if map.contains_key(&un_scoped) {
+                        exec_bin_name = un_scoped;
+                    } else if map.contains_key(&exec_bin_name) {
+                        // Keep as is
+                    } else if let Some(first_key) = map.keys().next() {
+                        if map.len() == 1 {
+                            exec_bin_name = first_key.to_string();
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     let kx_dir = dirs::home_dir().unwrap().join(".kumo").join("kx").join(format!("{}@{}", cli.binary, version));
     let global_bin_dir = kx_dir.join(".bin");
+    
+    let exec_possible_bins = if cfg!(target_os = "windows") {
+        vec![format!("{}.cmd", exec_bin_name), format!("{}.exe", exec_bin_name), format!("{}.bat", exec_bin_name), exec_bin_name.clone()]
+    } else {
+        vec![exec_bin_name.clone()]
+    };
 
     if kx_dir.exists() {
-        for bin_name in &possible_bins {
+        for bin_name in &exec_possible_bins {
             let bin_path = global_bin_dir.join(bin_name);
             if bin_path.exists() {
                 // Update access time for GC
@@ -86,7 +143,7 @@ async fn inner_main(cli: KxCli, store: &kumo_core::Store, security: &security::S
     std::io::stdin().read_line(&mut input)?;
 
     if input.trim().to_lowercase() == "y" {
-        let (bin_path, bin_dir) = install_and_get_bin_with_lockfile(store, resolver, security, &cli.binary, &lockfile, &kx_dir).await?;
+        let (bin_path, bin_dir) = install_and_get_bin_with_lockfile(store, resolver, security, &cli.binary, &exec_bin_name, &lockfile, &kx_dir).await?;
         execute_binary(&bin_path, cli.args, &bin_dir)
     } else {
         anyhow::bail!("Execution cancelled.");
@@ -137,6 +194,7 @@ async fn install_and_get_bin_with_lockfile(
     _resolver: &Resolver,
     security: &security::SecurityEngine,
     name: &str,
+    exec_bin_name: &str,
     lockfile: &Lockfile,
     kx_dir: &std::path::PathBuf,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf)> {
@@ -185,7 +243,12 @@ async fn install_and_get_bin_with_lockfile(
             if let Some(bin) = &pkg.bin {
                 match bin {
                     serde_json::Value::String(path) => {
-                        create_shim(&bin_dir, &pkg_name, &dest.join(path)).await?;
+                        let shim_name = if pkg_name.contains('/') {
+                            pkg_name.split('/').last().unwrap_or(&pkg_name)
+                        } else {
+                            &pkg_name
+                        };
+                        create_shim(&bin_dir, shim_name, &dest.join(path)).await?;
                     }
                     serde_json::Value::Object(map) => {
                         for (cmd_name, path) in map {
@@ -202,9 +265,9 @@ async fn install_and_get_bin_with_lockfile(
 
     // Try to find the binary path in the newly installed package
     let possible_bins = if cfg!(target_os = "windows") {
-        vec![format!("{}.cmd", name), format!("{}.exe", name), format!("{}.bat", name), name.to_string()]
+        vec![format!("{}.cmd", exec_bin_name), format!("{}.exe", exec_bin_name), format!("{}.bat", exec_bin_name), exec_bin_name.to_string()]
     } else {
-        vec![name.to_string()]
+        vec![exec_bin_name.to_string()]
     };
 
     for bin_name in possible_bins {

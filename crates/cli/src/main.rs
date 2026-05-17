@@ -99,7 +99,7 @@ mod common;
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    
+
     let update_check_handle = if !matches!(cli.command, Commands::Update { .. }) {
         Some(tokio::spawn(common::check_for_new_version()))
     } else {
@@ -170,7 +170,7 @@ async fn main() -> Result<()> {
                         .unwrap()
                         .insert(name.clone(), serde_json::json!("latest"));
                 }
-                
+
                 let json = serde_json::to_string_pretty(&config_content)?;
                 std::fs::write(&config_path, json)?;
                 println!(
@@ -450,15 +450,16 @@ async fn resolve_and_install(
 ) -> Result<()> {
     let deps_dir_name = common::get_deps_dir();
 
-    if deps_dir_name == "dependencies" && !std::path::Path::new("dependencies").exists() {
+    if !std::path::Path::new(&deps_dir_name).exists() {
         let gitignore_path = std::env::current_dir()?.join(".gitignore");
         if gitignore_path.exists() {
             let content = std::fs::read_to_string(&gitignore_path)?;
+            let ignore_entry = format!("{}/", deps_dir_name);
             if !content
                 .lines()
-                .any(|l| l.trim() == "dependencies" || l.trim() == "dependencies/")
+                .any(|l| l.trim() == deps_dir_name || l.trim() == ignore_entry)
             {
-                println!("Adding dependencies/ to .gitignore");
+                println!("Adding {} to .gitignore", ignore_entry);
                 let mut file = std::fs::OpenOptions::new()
                     .append(true)
                     .open(&gitignore_path)?;
@@ -466,7 +467,7 @@ async fn resolve_and_install(
                 if !content.ends_with('\n') && !content.is_empty() {
                     writeln!(file)?;
                 }
-                writeln!(file, "dependencies/")?;
+                writeln!(file, "{}", ignore_entry)?;
             }
         }
     }
@@ -942,7 +943,7 @@ async fn prune_store(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
                 let root = store.get_root();
                 let metadata_dir = root.join("metadata");
                 let objects_dir = root.join("objects");
-                
+
                 if metadata_dir.exists() {
                     let _ = std::fs::remove_dir_all(&metadata_dir);
                     let _ = std::fs::create_dir_all(&metadata_dir);
@@ -1117,7 +1118,7 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
     // 1. Try to find script in package.json or kumo.json
     let project_dir = std::env::current_dir()?;
     let config_files = ["package.json", "kumo.json"];
-    
+
     for config_file in config_files {
         let path = project_dir.join(config_file);
         if path.exists() {
@@ -1134,7 +1135,7 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
                     c.arg("-c").arg(script_cmd);
                     c
                 };
-                
+
                 // Add dependencies/.bin to PATH so scripts can find installed tools
                 let deps_dir = common::get_deps_dir();
                 let bin_dir = project_dir.join(deps_dir).join(".bin");
@@ -1158,7 +1159,7 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
     // 2. Fallback: Try to find binary in .bin
     let deps_dir = common::get_deps_dir();
     let bin_dir = project_dir.join(&deps_dir).join(".bin");
-    
+
     let possible_bins = if cfg!(target_os = "windows") {
         vec![format!("{}.cmd", name), format!("{}.exe", name), format!("{}.bat", name), name.to_string()]
     } else {
@@ -1175,7 +1176,7 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
             } else {
                 std::process::Command::new(bin_path)
             };
-            
+
             command.args(args);
             let status = command.status()?;
             if !status.success() {
@@ -1191,7 +1192,7 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
 
 async fn handle_update(include_pre: bool, target_version: Option<String>) -> Result<()> {
     let current_version = env!("CARGO_PKG_VERSION");
-    
+
     if let Some(v) = &target_version {
         println!("Checking for version {}...", v);
     } else if include_pre {
@@ -1199,7 +1200,7 @@ async fn handle_update(include_pre: bool, target_version: Option<String>) -> Res
     } else {
         println!("Checking for latest stable release...");
     }
-    
+
     let client = reqwest::Client::builder()
         .user_agent("kumo-pkg-manager")
         .build()?;
@@ -1211,7 +1212,7 @@ async fn handle_update(include_pre: bool, target_version: Option<String>) -> Res
     };
 
     let response = client.get(url).send().await?;
-    
+
     if !response.status().is_success() {
         if response.status() == reqwest::StatusCode::NOT_FOUND && !include_pre {
             anyhow::bail!("No stable release found. Try 'kumo update --pre' to check for alpha/beta versions.");
@@ -1223,14 +1224,14 @@ async fn handle_update(include_pre: bool, target_version: Option<String>) -> Res
     let release: serde_json::Value = if include_pre || target_version.is_some() {
         let releases = release_val.as_array()
             .ok_or_else(|| anyhow::anyhow!("Expected array of releases from GitHub API"))?;
-        
+
         let mut best_match = None;
         let mut max_version = semver::Version::parse("0.0.0").unwrap();
 
         for rel in releases {
             if let Some(tag) = rel["tag_name"].as_str() {
                 let version_str = tag.strip_prefix('v').unwrap_or(tag);
-                
+
                 if let Some(target) = &target_version {
                     let target_lower = target.to_lowercase();
                     if target_lower == "alpha" || target_lower == "beta" || target_lower == "rc" {
@@ -1306,7 +1307,7 @@ async fn handle_update(include_pre: bool, target_version: Option<String>) -> Res
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
     std::fs::create_dir_all(&temp_dir)?;
-    
+
     let kumo_bin_name = if cfg!(target_os = "windows") { "kumo.exe" } else { "kumo" };
     let kx_bin_name = if cfg!(target_os = "windows") { "kx.exe" } else { "kx" };
 
@@ -1352,7 +1353,7 @@ async fn handle_update(include_pre: bool, target_version: Option<String>) -> Res
     find_binaries(&temp_dir, kumo_bin_name, kx_bin_name, &mut found_kumo, &mut found_kx);
 
     let kumo_src = found_kumo.ok_or_else(|| anyhow::anyhow!("Binary '{}' not found in update archive", kumo_bin_name))?;
-    
+
     println!("Applying update for Kumo...");
     self_replace::self_replace(&kumo_src)?;
 
@@ -1374,7 +1375,7 @@ async fn handle_update(include_pre: bool, target_version: Option<String>) -> Res
             }
         }
     }
-    
+
     let _ = std::fs::remove_dir_all(&temp_dir);
     println!("Successfully updated to v{}!", latest_version);
     Ok(())
