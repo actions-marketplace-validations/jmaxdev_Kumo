@@ -1,6 +1,6 @@
 [package]
 name = "security"
-version = "0.1.42-alpha.3"
+version = "0.1.42"
 edition = "2021"
 
 [dependencies]
