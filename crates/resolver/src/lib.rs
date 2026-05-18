@@ -19,6 +19,17 @@ pub struct PackageMetadata {
     pub cpu: Option<Vec<String>>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct RegistrySignature {
+    pub keyid: String,
+    pub sig: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct RegistryAttestations {
+    pub url: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TarballInfo {
     pub tarball: String,
@@ -27,6 +38,12 @@ pub struct TarballInfo {
     pub size: u64,
     #[serde(rename = "unpackedSize", default)]
     pub unpacked_size: u64,
+    #[serde(default)]
+    pub signatures: Option<Vec<RegistrySignature>>,
+    #[serde(rename = "npm-signature", default)]
+    pub npm_signature: Option<String>,
+    #[serde(default)]
+    pub attestations: Option<RegistryAttestations>,
 }
 
 impl TarballInfo {
@@ -79,6 +96,8 @@ pub struct LockedPackage {
     pub bin: Option<serde_json::Value>,
     pub scripts: Option<HashMap<String, String>>,
     pub optional_dependencies: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub published_at: Option<String>,
 }
 
 #[derive(Clone)]
@@ -354,6 +373,7 @@ impl Resolver {
                         bin: metadata.bin.clone(),
                         scripts: metadata.scripts.clone(),
                         optional_dependencies: metadata.optional_dependencies.clone(),
+                        published_at: metadata.published_at.clone(),
                     },
                 );
                 drop(pkgs);

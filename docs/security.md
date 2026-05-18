@@ -22,6 +22,9 @@ kumo config init
 | `minimum_release_age` | Number | The minimum age of a package version (in minutes) required for installation. Helps mitigate typosquatting. | `1440` (24 hours) |
 | `allow_postinstall` | Boolean | If `false`, Kumo will block packages that have lifecycle scripts (`preinstall`, `install`, `postinstall`). | `false` |
 | `trusted_packages` | Array | A list of packages that are allowed to run scripts even if `allow_postinstall` is `false`. | `[]` |
+| `trust_policy` | String | Enforces signature and provenance checks. Set to `"no-downgrade"` to prevent package updates that have a weaker trust level than previously installed releases. Options: `"none"`, `"no-downgrade"`. | `"none"` |
+| `trust_policy_exclude` | Array | A list of package names that are excluded from the trust policy check. | `[]` |
+| `trust_policy_ignore_after` | Number | The number of minutes after publication to ignore trust verification (allows older releases without provenance). | `10080` (7 days) |
 
 ## Mitigating Supply Chain Attacks
 
@@ -50,3 +53,21 @@ Legal risks are also part of the supply chain. Kumo can ensure that only package
 
 ### 5. Checksum Integrity
 Kumo verifies the integrity of every downloaded tarball using BLAKE3/SHA hashes. If a package is tampered with on the registry, Kumo will detect the mismatch and fail the installation.
+
+### 6. Signature Verification & Trust Policy (no-downgrade)
+Supply chain hijackings often occur when an attacker steals a publisher's credentials and manually publishes a malicious release to override a legitimate one. Manual publishes lack built-in provenance and signatures.
+
+To mitigate this, Kumo tracks three **Trust Levels** based on npm registry signatures and attestations:
+1. **High**: Verifiable **SLSA build provenance** via Sigstore and CI/CD OIDC.
+2. **Medium**: Standard **Registry Signatures** (PGP or Sigstore signatures).
+3. **Low**: **No trust evidence** (manual publish).
+
+When `trust_policy` is set to `"no-downgrade"`, Kumo compares resolved packages against previously installed versions in `kumo.lock`. If a new version's trust level is **weaker** than the previous version, Kumo halts the installation:
+
+```bash
+Security policy violation: Trust level downgrade detected for package 'some-package'!
+  Previous: High
+  New: Low
+```
+
+You can bypass false positives via `trust_policy_exclude` or by using `trust_policy_ignore_after` (which automatically ignores checks on releases published more than X minutes ago).

@@ -9,6 +9,23 @@ pub struct Vulnerability {
     pub severity: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum TrustLevel {
+    Low = 0,
+    Medium = 1,
+    High = 2,
+}
+
+impl std::fmt::Display for TrustLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TrustLevel::Low => write!(f, "Low"),
+            TrustLevel::Medium => write!(f, "Medium"),
+            TrustLevel::High => write!(f, "High"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Policy {
     pub block_deprecated: bool,
@@ -18,6 +35,9 @@ pub struct Policy {
     pub minimum_release_age: u64,
     pub allow_postinstall: bool,
     pub trusted_packages: HashSet<String>,
+    pub trust_policy: String,
+    pub trust_policy_exclude: HashSet<String>,
+    pub trust_policy_ignore_after: u64,
 }
 
 impl Default for Policy {
@@ -33,6 +53,9 @@ impl Default for Policy {
             minimum_release_age: 1440,
             allow_postinstall: false,
             trusted_packages: HashSet::new(),
+            trust_policy: "none".to_string(),
+            trust_policy_exclude: HashSet::new(),
+            trust_policy_ignore_after: 10080, // 7 days in minutes
         }
     }
 }
@@ -48,6 +71,53 @@ impl SecurityEngine {
             policy,
             client: reqwest::Client::new(),
         }
+    }
+
+    pub fn get_trust_level(&self, has_signatures: bool, has_attestations: bool) -> TrustLevel {
+        if has_attestations {
+            TrustLevel::High
+        } else if has_signatures {
+            TrustLevel::Medium
+        } else {
+            TrustLevel::Low
+        }
+    }
+
+    pub fn validate_trust_downgrade(
+        &self,
+        name: &str,
+        new_level: TrustLevel,
+        old_level: TrustLevel,
+        published_at: Option<&str>,
+    ) -> bool {
+        if self.policy.trust_policy != "no-downgrade" {
+            return true;
+        }
+
+        if self.policy.trust_policy_exclude.contains(name) {
+            return true;
+        }
+
+        if new_level >= old_level {
+            return true;
+        }
+
+        // Check trust_policy_ignore_after
+        if self.policy.trust_policy_ignore_after > 0 {
+            if let Some(pub_at) = published_at {
+                if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(pub_at) {
+                    let now = chrono::Utc::now();
+                    let age = now
+                        .signed_duration_since(dt.with_timezone(&chrono::Utc))
+                        .num_minutes();
+                    if age > self.policy.trust_policy_ignore_after as i64 {
+                        return true; // Ignored because package is too old
+                    }
+                }
+            }
+        }
+
+        false
     }
 
     pub async fn check_vulnerabilities(

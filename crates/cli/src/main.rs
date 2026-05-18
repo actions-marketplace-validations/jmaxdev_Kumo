@@ -524,6 +524,8 @@ async fn resolve_and_install(
         None
     };
 
+    let lockfile_old_copy = lockfile.clone();
+
     let lockfile = if let Some(lf) = lockfile {
         if lf.config_hash == Some(config_hash.clone()) {
             println!("Configuration unchanged. Using persistent resolution cache.");
@@ -531,6 +533,7 @@ async fn resolve_and_install(
         } else {
             println!("Resolving full dependency tree...");
             let mut lf = resolver.resolve_tree(&deps).await?;
+            validate_lockfile_trust(security, &lockfile_old_copy, &lf)?;
             lf.config_hash = Some(config_hash);
             let yaml = serde_yaml::to_string(&lf)?;
             std::fs::write(&lock_path, yaml)?;
@@ -539,6 +542,7 @@ async fn resolve_and_install(
     } else {
         println!("Resolving full dependency tree...");
         let mut lf = resolver.resolve_tree(&deps).await?;
+        validate_lockfile_trust(security, &lockfile_old_copy, &lf)?;
         lf.config_hash = Some(config_hash);
         let yaml = serde_yaml::to_string(&lf)?;
         std::fs::write(&lock_path, yaml)?;
@@ -1660,6 +1664,62 @@ async fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Res
             .await?;
         } else {
             tokio::fs::copy(entry.path(), dst.join(entry.file_name())).await?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_lockfile_trust(
+    security: &SecurityEngine,
+    old_lf: &Option<Lockfile>,
+    new_lf: &Lockfile,
+) -> Result<()> {
+    if let Some(ref old) = old_lf {
+        for (key, new_pkg) in &new_lf.packages {
+            let parts: Vec<&str> = key.split('@').collect();
+            let name = if key.starts_with('@') {
+                if parts.len() > 1 {
+                    format!("@{}", parts[1])
+                } else {
+                    key.clone()
+                }
+            } else {
+                parts[0].to_string()
+            };
+
+            // Find if there was any version of this package in the old lockfile
+            let old_pkg_opt = old.packages.iter()
+                .find(|(k, _)| {
+                    let k_parts: Vec<&str> = k.split('@').collect();
+                    let k_name = if k.starts_with('@') {
+                        if k_parts.len() > 1 {
+                            format!("@{}", k_parts[1])
+                        } else {
+                            (*k).clone()
+                        }
+                    } else {
+                        k_parts[0].to_string()
+                    };
+                    k_name == name
+                })
+                .map(|(_, p)| p);
+
+            if let Some(old_pkg) = old_pkg_opt {
+                let old_has_sigs = old_pkg.resolution.signatures.as_ref().map_or(false, |s| !s.is_empty()) || old_pkg.resolution.npm_signature.is_some();
+                let old_has_atts = old_pkg.resolution.attestations.is_some();
+                let new_has_sigs = new_pkg.resolution.signatures.as_ref().map_or(false, |s| !s.is_empty()) || new_pkg.resolution.npm_signature.is_some();
+                let new_has_atts = new_pkg.resolution.attestations.is_some();
+
+                let old_trust = security.get_trust_level(old_has_sigs, old_has_atts);
+                let new_trust = security.get_trust_level(new_has_sigs, new_has_atts);
+
+                if !security.validate_trust_downgrade(&name, new_trust, old_trust, new_pkg.published_at.as_deref()) {
+                    anyhow::bail!(
+                        "Security policy violation: Trust level downgrade detected for package '{}'!\n  Previous: {}\n  New: {}\n  Configure trustPolicyExclude or trustPolicyIgnoreAfter in kumo.config.json if this is expected.",
+                        name, old_trust, new_trust
+                    );
+                }
+            }
         }
     }
     Ok(())
