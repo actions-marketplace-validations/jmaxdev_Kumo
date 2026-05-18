@@ -30,7 +30,7 @@ kumo config init
 
 Kumo implements several strategies to protect your project from malicious actors in the dependency chain.
 
-### 1. Script Blocking & Trusted Packages
+### 1. Script Blocking, Sanitization & Path Protection
 Many supply chain attacks use `postinstall` scripts to execute malicious code. Kumo blocks these scripts by default. 
 
 However, you can whitelist specific packages you trust while keeping the global block active:
@@ -42,8 +42,14 @@ However, you can whitelist specific packages you trust while keeping the global 
 ```
 This allows only the specified packages to run their installation scripts.
 
-### 2. Typosquatting Protection
-Attackers often release packages with names very similar to popular ones. These are usually detected and removed quickly. By enforcing a `minimum_release_age` (default 24h), Kumo ensures you don't install a "poisoned" package before it can be reported.
+To guarantee maximum protection, even when scripts are explicitly allowed, Kumo:
+* **Sanitizes the Environment:** Automatically strips sensitive variables (like `AWS_ACCESS_KEY_ID`, `GCP_PROJECT`, `GITHUB_TOKEN`, `NPM_TOKEN`, etc.) from the command context, preventing malicious scripts from exfiltrating credentials.
+* **Checks File Path Access:** Pre-scans script contents and blocks execution if they contain patterns referencing sensitive locations (e.g. `.ssh`, `.aws`, `.claudecode`, `.cursor`, `.vscode`, `.env`).
+
+### 2. Typosquatting Protection (Levenshtein Engine)
+Attackers often release packages with names very similar to popular ones (e.g. `axois-utils` or `chalk-tempalte`). Kumo provides two layers of defense against this:
+1. **Age Threshold (`minimum_release_age`):** Enforces a default 24-hour minimum age for package releases, ensuring freshly published malicious copycats are blocked.
+2. **Levenshtein Distance Check:** Compares resolved package names against a built-in dictionary of the top 100 most popular npm packages and the project's existing dependencies. If a package has a Levenshtein distance ≤ 2 (or ≤ 3 for longer names), Kumo automatically flags it and halts the installation with a typosquatting warning.
 
 ### 3. Vulnerability Scanning
 Kumo integrates with the **OSV (Open Source Vulnerabilities)** database. During the resolution phase, it checks every package version. If a vulnerability matches the `min_severity` threshold, the installation is aborted.
@@ -54,7 +60,7 @@ Legal risks are also part of the supply chain. Kumo can ensure that only package
 ### 5. Checksum Integrity
 Kumo verifies the integrity of every downloaded tarball using BLAKE3/SHA hashes. If a package is tampered with on the registry, Kumo will detect the mismatch and fail the installation.
 
-### 6. Signature Verification & Trust Policy (no-downgrade)
+### 6. Signature Verification & Trust Policy
 Supply chain hijackings often occur when an attacker steals a publisher's credentials and manually publishes a malicious release to override a legitimate one. Manual publishes lack built-in provenance and signatures.
 
 To mitigate this, Kumo tracks three **Trust Levels** based on npm registry signatures and attestations:
@@ -62,12 +68,12 @@ To mitigate this, Kumo tracks three **Trust Levels** based on npm registry signa
 2. **Medium**: Standard **Registry Signatures** (PGP or Sigstore signatures).
 3. **Low**: **No trust evidence** (manual publish).
 
-When `trust_policy` is set to `"no-downgrade"`, Kumo compares resolved packages against previously installed versions in `kumo.lock`. If a new version's trust level is **weaker** than the previous version, Kumo halts the installation:
+You can configure two modes of `trust_policy` in `kumo.config.json`:
+* `"no-downgrade"` (default): Compares resolved packages against previously installed versions in `kumo.lock`. If a new version's trust level is **weaker** than the previous version, Kumo halts the installation.
+* `"strict"`: Completely blocks installation of **any** package with `Low` trust level (unsigned/no provenance), forcing the user to explicitly whitelist trusted unsigned dependencies in `trust_policy_exclude`.
 
 ```bash
-Security policy violation: Trust level downgrade detected for package 'some-package'!
-  Previous: High
-  New: Low
+Security policy violation: Strict trust policy is active, and package 'some-package' has no digital signatures (TrustLevel: Low)!
 ```
 
 You can bypass false positives via `trust_policy_exclude` or by using `trust_policy_ignore_after` (which automatically ignores checks on releases published more than X minutes ago).
