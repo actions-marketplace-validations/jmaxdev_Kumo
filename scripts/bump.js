@@ -115,7 +115,7 @@ async function run() {
 
     console.log(`Pushing changes and tag v${newVersion} to origin/\x1b[35m${targetBranch}\x1b[0m...`);
     // Push the current HEAD to the target branch
-    //execSync(`git push origin HEAD:${targetBranch}`);
+    execSync(`git push origin HEAD:${targetBranch}`);
 
     execSync(`git push origin v${newVersion}`);
     if (targetBranch === "master") {
