@@ -1274,6 +1274,18 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
                     let specific_cache = cache_dir.join(&hash_val);
                     if specific_cache.exists() {
                         println!("⚡ \x1b[32mKumo Cache Hit:\x1b[0m {} [{}]", name, &hash_val[0..8]);
+                        
+                        if let Ok(out_log) = std::fs::read(specific_cache.join("stdout.log")) {
+                            use std::io::Write;
+                            let _ = std::io::stdout().write_all(&out_log);
+                            let _ = std::io::stdout().flush();
+                        }
+                        if let Ok(err_log) = std::fs::read(specific_cache.join("stderr.log")) {
+                            use std::io::Write;
+                            let _ = std::io::stderr().write_all(&err_log);
+                            let _ = std::io::stderr().flush();
+                        }
+
                         for out_pattern in &outputs {
                             let clean_pattern = out_pattern.trim_end_matches("/**").trim_end_matches("/*").trim_end_matches('/');
                             let out_path = specific_cache.join(clean_pattern);
@@ -1295,16 +1307,15 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
 
                 println!("> {}", script_cmd);
                 let mut shell_cmd = if cfg!(target_os = "windows") {
-                    let mut c = std::process::Command::new("cmd");
+                    let mut c = tokio::process::Command::new("cmd");
                     c.arg("/c").arg(script_cmd);
                     c
                 } else {
-                    let mut c = std::process::Command::new("sh");
+                    let mut c = tokio::process::Command::new("sh");
                     c.arg("-c").arg(script_cmd);
                     c
                 };
 
-                // Add dependencies/.bin to PATH so scripts can find installed tools
                 let deps_dir = common::get_deps_dir();
                 let bin_dir = project_dir.join(deps_dir).join(".bin");
                 if let Some(old_path) = std::env::var_os("PATH") {
@@ -1315,14 +1326,75 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
                 }
 
                 shell_cmd.args(&args);
-                let status = shell_cmd.status()?;
-                if !status.success() {
-                    std::process::exit(status.code().unwrap_or(1));
-                }
 
                 if use_cache {
+                    // Force colored output since we are piping
+                    shell_cmd.env("FORCE_COLOR", "1");
+                    
+                    shell_cmd.stdout(std::process::Stdio::piped());
+                    shell_cmd.stderr(std::process::Stdio::piped());
+
+                    let mut child = shell_cmd.spawn()?;
+
+                    let mut stdout = child.stdout.take().unwrap();
+                    let mut stderr = child.stderr.take().unwrap();
+
+                    let stdout_log = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
+                    let stderr_log = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
+
+                    let out_log_clone = stdout_log.clone();
+                    let stdout_task = tokio::spawn(async move {
+                        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                        let mut sys_out = tokio::io::stdout();
+                        let mut buf = [0; 1024];
+                        loop {
+                            match stdout.read(&mut buf).await {
+                                Ok(0) | Err(_) => break,
+                                Ok(n) => {
+                                    out_log_clone.lock().await.extend_from_slice(&buf[..n]);
+                                    let _ = sys_out.write_all(&buf[..n]).await;
+                                    let _ = sys_out.flush().await;
+                                }
+                            }
+                        }
+                    });
+
+                    let err_log_clone = stderr_log.clone();
+                    let stderr_task = tokio::spawn(async move {
+                        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                        let mut sys_err = tokio::io::stderr();
+                        let mut buf = [0; 1024];
+                        loop {
+                            match stderr.read(&mut buf).await {
+                                Ok(0) | Err(_) => break,
+                                Ok(n) => {
+                                    err_log_clone.lock().await.extend_from_slice(&buf[..n]);
+                                    let _ = sys_err.write_all(&buf[..n]).await;
+                                    let _ = sys_err.flush().await;
+                                }
+                            }
+                        }
+                    });
+
+                    let status = child.wait().await?;
+                    let _ = tokio::join!(stdout_task, stderr_task);
+
+                    if !status.success() {
+                        std::process::exit(status.code().unwrap_or(1));
+                    }
+
                     let specific_cache = cache_dir.join(&hash_val);
                     let _ = std::fs::create_dir_all(&specific_cache);
+
+                    let final_out = stdout_log.lock().await;
+                    if !final_out.is_empty() {
+                        let _ = tokio::fs::write(specific_cache.join("stdout.log"), &*final_out).await;
+                    }
+                    let final_err = stderr_log.lock().await;
+                    if !final_err.is_empty() {
+                        let _ = tokio::fs::write(specific_cache.join("stderr.log"), &*final_err).await;
+                    }
+
                     for out_pattern in &outputs {
                         let clean_pattern = out_pattern.trim_end_matches("/**").trim_end_matches("/*").trim_end_matches('/');
                         let source_path = project_dir.join(clean_pattern);
@@ -1337,6 +1409,11 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
                                 let _ = std::fs::copy(&source_path, &dest_path);
                             }
                         }
+                    }
+                } else {
+                    let status = shell_cmd.status().await?;
+                    if !status.success() {
+                        std::process::exit(status.code().unwrap_or(1));
                     }
                 }
 
