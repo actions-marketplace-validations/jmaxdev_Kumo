@@ -1321,9 +1321,21 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
                 };
 
                 let deps_dir = common::get_deps_dir();
-                let bin_dir = project_dir.join(deps_dir).join(".bin");
+                let mut bin_dirs = Vec::new();
+                let mut current = Some(project_dir.as_path());
+                while let Some(dir) = current {
+                    let bin_path = dir.join(&deps_dir).join(".bin");
+                    if bin_path.exists() {
+                        bin_dirs.push(bin_path);
+                    }
+                    current = dir.parent();
+                }
+                if bin_dirs.is_empty() {
+                    bin_dirs.push(project_dir.join(deps_dir).join(".bin"));
+                }
+
                 if let Some(old_path) = std::env::var_os("PATH") {
-                    let mut paths = std::vec![bin_dir];
+                    let mut paths = bin_dirs;
                     paths.extend(std::env::split_paths(&old_path));
                     let new_path = std::env::join_paths(paths)?;
                     shell_cmd.env("PATH", new_path);
@@ -1426,9 +1438,20 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
         }
     }
 
-    // 2. Fallback: Try to find binary in .bin
+    // 2. Fallback: Try to find binary in .bin (walking up parent directories)
     let deps_dir = common::get_deps_dir();
-    let bin_dir = project_dir.join(&deps_dir).join(".bin");
+    let mut bin_dirs = Vec::new();
+    let mut current = Some(project_dir.as_path());
+    while let Some(dir) = current {
+        let bin_path = dir.join(&deps_dir).join(".bin");
+        if bin_path.exists() {
+            bin_dirs.push(bin_path);
+        }
+        current = dir.parent();
+    }
+    if bin_dirs.is_empty() {
+        bin_dirs.push(project_dir.join(&deps_dir).join(".bin"));
+    }
 
     let possible_bins = if cfg!(target_os = "windows") {
         vec![format!("{}.cmd", name), format!("{}.exe", name), format!("{}.bat", name), name.to_string()]
@@ -1436,23 +1459,34 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
         vec![name.to_string()]
     };
 
-    for bin_name in possible_bins {
-        let bin_path = bin_dir.join(&bin_name);
-        if bin_path.exists() {
-            let mut command = if bin_name.ends_with(".cmd") || bin_name.ends_with(".bat") {
-                let mut c = std::process::Command::new("cmd");
-                c.arg("/c").arg(bin_path);
-                c
-            } else {
-                std::process::Command::new(bin_path)
-            };
+    for bin_dir in &bin_dirs {
+        for bin_name in &possible_bins {
+            let bin_path = bin_dir.join(bin_name);
+            if bin_path.exists() {
+                let mut command = if bin_name.ends_with(".cmd") || bin_name.ends_with(".bat") {
+                    let mut c = std::process::Command::new("cmd");
+                    c.arg("/c").arg(&bin_path);
+                    c
+                } else {
+                    std::process::Command::new(&bin_path)
+                };
 
-            command.args(args);
-            let status = command.status()?;
-            if !status.success() {
-                std::process::exit(status.code().unwrap_or(1));
+                command.args(args.clone());
+
+                if let Some(old_path) = std::env::var_os("PATH") {
+                    let mut paths = bin_dirs.clone();
+                    paths.extend(std::env::split_paths(&old_path));
+                    if let Ok(new_path) = std::env::join_paths(paths) {
+                        command.env("PATH", new_path);
+                    }
+                }
+
+                let status = command.status()?;
+                if !status.success() {
+                    std::process::exit(status.code().unwrap_or(1));
+                }
+                return Ok(());
             }
-            return Ok(());
         }
     }
 

@@ -65,20 +65,34 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
         }
     }
 
-    // 1. Try local execution first (dependencies/.bin)
+    // 1. Try local execution first (dependencies/.bin walking up parent directories)
     let deps_dir_name = common::get_deps_dir();
-    let local_bin_dir = std::env::current_dir()?.join(&deps_dir_name).join(".bin");
-    
+    let current_dir = std::env::current_dir()?;
+    let mut bin_dirs = Vec::new();
+    let mut current = Some(current_dir.as_path());
+    while let Some(dir) = current {
+        let bin_path = dir.join(&deps_dir_name).join(".bin");
+        if bin_path.exists() {
+            bin_dirs.push(bin_path);
+        }
+        current = dir.parent();
+    }
+    if bin_dirs.is_empty() {
+        bin_dirs.push(current_dir.join(&deps_dir_name).join(".bin"));
+    }
+
     let possible_bins = if cfg!(target_os = "windows") {
         vec![format!("{}.cmd", cli.binary), format!("{}.exe", cli.binary), format!("{}.bat", cli.binary), cli.binary.clone()]
     } else {
         vec![cli.binary.clone()]
     };
 
-    for bin_name in &possible_bins {
-        let bin_path = local_bin_dir.join(bin_name);
-        if bin_path.exists() {
-            return execute_binary(&bin_path, cli.args, &local_bin_dir);
+    for bin_dir in &bin_dirs {
+        for bin_name in &possible_bins {
+            let bin_path = bin_dir.join(bin_name);
+            if bin_path.exists() {
+                return execute_binary(&bin_path, cli.args, bin_dir);
+            }
         }
     }
 
