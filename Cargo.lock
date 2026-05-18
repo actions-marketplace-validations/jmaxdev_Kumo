@@ -271,7 +271,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cli"
-version = "0.1.42-alpha.2"
+version = "0.1.42"
 dependencies = [
  "anyhow",
  "blake3",
@@ -280,6 +280,7 @@ dependencies = [
  "filetime",
  "flate2",
  "futures",
+ "glob",
  "indicatif",
  "kumo-core",
  "num_cpus",
@@ -707,6 +708,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glob"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
+
+[[package]]
 name = "h2"
 version = "0.3.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1055,7 +1062,7 @@ dependencies = [
 
 [[package]]
 name = "kumo-core"
-version = "0.1.42-alpha.2"
+version = "0.1.42"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1495,7 +1502,7 @@ dependencies = [
 
 [[package]]
 name = "resolver"
-version = "0.1.42-alpha.2"
+version = "0.1.42"
 dependencies = [
  "anyhow",
  "dirs",
@@ -1614,7 +1621,7 @@ dependencies = [
 
 [[package]]
 name = "security"
-version = "0.1.42-alpha.2"
+version = "0.1.42"
 dependencies = [
  "anyhow",
  "chrono",

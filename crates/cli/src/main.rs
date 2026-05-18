@@ -1156,16 +1156,143 @@ async fn generate_graph() -> Result<()> {
 }
 
 async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
-    // 1. Try to find script in package.json or kumo.json
     let project_dir = std::env::current_dir()?;
+    let config_path = project_dir.join("kumo.config.json");
+    let mut inputs = vec![];
+    let mut outputs = vec![];
+    let mut use_cache = false;
+    let mut found_custom_cache = false;
+
+    if config_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&config_path) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(cache_cfg) = v.get("cache").and_then(|c| c.get(name)) {
+                    use_cache = true;
+                    found_custom_cache = true;
+                    if let Some(ins) = cache_cfg.get("inputs").and_then(|i| i.as_array()) {
+                        inputs = ins.iter().filter_map(|i| i.as_str().map(|s| s.to_string())).collect();
+                    }
+                    if let Some(outs) = cache_cfg.get("outputs").and_then(|o| o.as_array()) {
+                        outputs = outs.iter().filter_map(|o| o.as_str().map(|s| s.to_string())).collect();
+                    }
+                }
+            }
+        }
+    }
+
+    // Default cache configuration for common scripts like "build"
+    if !found_custom_cache {
+        if name == "build" {
+            use_cache = true;
+            inputs = vec![
+                // General source folder
+                "src/**/*.ts".to_string(),
+                "src/**/*.tsx".to_string(),
+                "src/**/*.js".to_string(),
+                "src/**/*.jsx".to_string(),
+                "src/**/*.cjs".to_string(),
+                "src/**/*.mjs".to_string(),
+                
+                // Root level files and other common folders
+                "*.ts".to_string(),
+                "*.tsx".to_string(),
+                "*.js".to_string(),
+                "*.jsx".to_string(),
+                "*.cjs".to_string(),
+                "*.mjs".to_string(),
+                "lib/**/*.ts".to_string(),
+                "lib/**/*.js".to_string(),
+                "lib/**/*.cjs".to_string(),
+                "lib/**/*.mjs".to_string(),
+                
+                // Next.js specific folders
+                "app/**/*.ts".to_string(),
+                "app/**/*.tsx".to_string(),
+                "app/**/*.js".to_string(),
+                "app/**/*.jsx".to_string(),
+                "pages/**/*.ts".to_string(),
+                "pages/**/*.tsx".to_string(),
+                "pages/**/*.js".to_string(),
+                "pages/**/*.jsx".to_string(),
+                "components/**/*.ts".to_string(),
+                "components/**/*.tsx".to_string(),
+                "components/**/*.js".to_string(),
+                "components/**/*.jsx".to_string(),
+
+                // Common config files
+                "package.json".to_string(),
+                "tsconfig.json".to_string(),
+                "vite.config.ts".to_string(),
+                "vite.config.js".to_string(),
+                "next.config.js".to_string(),
+                "next.config.mjs".to_string(),
+                "next.config.ts".to_string(),
+                "tailwind.config.js".to_string(),
+                "tailwind.config.ts".to_string(),
+                "postcss.config.js".to_string(),
+                "postcss.config.mjs".to_string(),
+            ];
+            outputs = vec!["dist".to_string(), "build".to_string(), ".next".to_string()];
+        }
+    }
+
     let config_files = ["package.json", "kumo.json"];
 
     for config_file in config_files {
         let path = project_dir.join(config_file);
         if path.exists() {
-            let content = std::fs::read_to_string(path)?;
+            let content = std::fs::read_to_string(&path)?;
             let v: serde_json::Value = serde_json::from_str(&content).unwrap_or_default();
             if let Some(script_cmd) = v["scripts"][name].as_str() {
+                let cache_dir = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".kumo").join("cache").join("scripts");
+                let mut hash_val = String::new();
+                
+                if use_cache {
+                    let mut hasher = blake3::Hasher::new();
+                    hasher.update(script_cmd.as_bytes());
+                    if let Ok(lock) = std::fs::read_to_string(project_dir.join("kumo.lock")) {
+                        hasher.update(lock.as_bytes());
+                    }
+                    let mut matched_files = vec![];
+                    for pattern in &inputs {
+                        if let Ok(entries) = glob::glob(pattern) {
+                            for entry in entries.flatten() {
+                                if entry.is_file() {
+                                    matched_files.push(entry);
+                                }
+                            }
+                        }
+                    }
+                    matched_files.sort();
+                    for file in matched_files {
+                        hasher.update(file.to_string_lossy().as_bytes());
+                        if let Ok(data) = std::fs::read(&file) {
+                            hasher.update(&data);
+                        }
+                    }
+                    hash_val = hasher.finalize().to_hex().to_string();
+                    let specific_cache = cache_dir.join(&hash_val);
+                    if specific_cache.exists() {
+                        println!("⚡ \x1b[32mKumo Cache Hit:\x1b[0m {} [{}]", name, &hash_val[0..8]);
+                        for out_pattern in &outputs {
+                            let clean_pattern = out_pattern.trim_end_matches("/**").trim_end_matches("/*").trim_end_matches('/');
+                            let out_path = specific_cache.join(clean_pattern);
+                            let target_path = project_dir.join(clean_pattern);
+                            if out_path.exists() {
+                                if out_path.is_dir() {
+                                    let _ = copy_dir_recursive(&out_path, &target_path).await;
+                                } else {
+                                    if let Some(p) = target_path.parent() {
+                                        let _ = std::fs::create_dir_all(p);
+                                    }
+                                    let _ = std::fs::copy(&out_path, &target_path);
+                                }
+                            }
+                        }
+                        return Ok(());
+                    }
+                }
+
                 println!("> {}", script_cmd);
                 let mut shell_cmd = if cfg!(target_os = "windows") {
                     let mut c = std::process::Command::new("cmd");
@@ -1187,11 +1314,32 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
                     shell_cmd.env("PATH", new_path);
                 }
 
-                shell_cmd.args(args);
+                shell_cmd.args(&args);
                 let status = shell_cmd.status()?;
                 if !status.success() {
                     std::process::exit(status.code().unwrap_or(1));
                 }
+
+                if use_cache {
+                    let specific_cache = cache_dir.join(&hash_val);
+                    let _ = std::fs::create_dir_all(&specific_cache);
+                    for out_pattern in &outputs {
+                        let clean_pattern = out_pattern.trim_end_matches("/**").trim_end_matches("/*").trim_end_matches('/');
+                        let source_path = project_dir.join(clean_pattern);
+                        let dest_path = specific_cache.join(clean_pattern);
+                        if source_path.exists() {
+                            if source_path.is_dir() {
+                                let _ = copy_dir_recursive(&source_path, &dest_path).await;
+                            } else {
+                                if let Some(p) = dest_path.parent() {
+                                    let _ = std::fs::create_dir_all(p);
+                                }
+                                let _ = std::fs::copy(&source_path, &dest_path);
+                            }
+                        }
+                    }
+                }
+
                 return Ok(());
             }
         }
