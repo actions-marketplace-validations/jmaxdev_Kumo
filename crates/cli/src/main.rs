@@ -534,6 +534,7 @@ async fn resolve_and_install(
             println!("Resolving full dependency tree...");
             let mut lf = resolver.resolve_tree(&deps).await?;
             validate_lockfile_trust(security, &lockfile_old_copy, &lf)?;
+            validate_typosquatting(security, &lockfile_old_copy, &deps, &lf)?;
             lf.config_hash = Some(config_hash);
             let yaml = serde_yaml::to_string(&lf)?;
             std::fs::write(&lock_path, yaml)?;
@@ -543,6 +544,7 @@ async fn resolve_and_install(
         println!("Resolving full dependency tree...");
         let mut lf = resolver.resolve_tree(&deps).await?;
         validate_lockfile_trust(security, &lockfile_old_copy, &lf)?;
+        validate_typosquatting(security, &lockfile_old_copy, &deps, &lf)?;
         lf.config_hash = Some(config_hash);
         let yaml = serde_yaml::to_string(&lf)?;
         std::fs::write(&lock_path, yaml)?;
@@ -913,6 +915,28 @@ async fn run_install_scripts(
 ) -> Result<()> {
     for script_name in &["preinstall", "install", "postinstall"] {
         if let Some(script_content) = scripts.get(*script_name) {
+            // Check for suspicious access to sensitive files/directories (e.g. .ssh, .aws, .claudecode, .cursor, .vscode, .env)
+            let suspicious_patterns = [
+                ".ssh", ".aws", ".claudecode", ".cursor", ".vscode", ".env"
+            ];
+            
+            let mut is_suspicious = false;
+            let script_content_lower = script_content.to_lowercase();
+            for pattern in &suspicious_patterns {
+                if script_content_lower.contains(pattern) {
+                    is_suspicious = true;
+                    break;
+                }
+            }
+
+            if is_suspicious {
+                eprintln!(
+                    "🚨 \x1b[31mSecurity Violation:\x1b[0m Script '{}' in package {:?} blocked! It attempts to access sensitive paths ({})",
+                    script_name, pkg_dir.file_name().unwrap_or_default(), script_content
+                );
+                continue; // Skip this suspicious script!
+            }
+
             let mut command = if cfg!(windows) {
                 let mut cmd = std::process::Command::new("cmd");
                 cmd.arg("/c").arg(script_content);
@@ -922,6 +946,18 @@ async fn run_install_scripts(
                 sh.arg("-c").arg(script_content);
                 sh
             };
+
+            // Remove sensitive environment variables to prevent exfiltration
+            let sensitive_vars = [
+                "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_DEFAULT_REGION",
+                "GCP_PROJECT", "GOOGLE_APPLICATION_CREDENTIALS",
+                "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID",
+                "GITHUB_TOKEN", "GITHUB_AUTH_TOKEN", "NPM_TOKEN", "NPM_AUTH_TOKEN",
+                "STRIPE_API_KEY", "SENDGRID_API_KEY", "SLACK_BOT_TOKEN", "DISCORD_TOKEN"
+            ];
+            for var in &sensitive_vars {
+                command.env_remove(var);
+            }
 
             if let Some(deps_dir) = pkg_dir.parent() {
                 let real_deps_dir = if deps_dir
@@ -1708,19 +1744,34 @@ fn validate_lockfile_trust(
     old_lf: &Option<Lockfile>,
     new_lf: &Lockfile,
 ) -> Result<()> {
-    if let Some(ref old) = old_lf {
-        for (key, new_pkg) in &new_lf.packages {
-            let parts: Vec<&str> = key.split('@').collect();
-            let name = if key.starts_with('@') {
-                if parts.len() > 1 {
-                    format!("@{}", parts[1])
-                } else {
-                    key.clone()
-                }
+    for (key, new_pkg) in &new_lf.packages {
+        let parts: Vec<&str> = key.split('@').collect();
+        let name = if key.starts_with('@') {
+            if parts.len() > 1 {
+                format!("@{}", parts[1])
             } else {
-                parts[0].to_string()
-            };
+                key.clone()
+            }
+        } else {
+            parts[0].to_string()
+        };
 
+        let new_has_sigs = new_pkg.resolution.signatures.as_ref().map_or(false, |s| !s.is_empty()) || new_pkg.resolution.npm_signature.is_some();
+        let new_has_atts = new_pkg.resolution.attestations.is_some();
+        let new_trust = security.get_trust_level(new_has_sigs, new_has_atts);
+
+        // 1. Strict Trust Policy Check
+        if security.policy.trust_policy == "strict" && new_trust == security::TrustLevel::Low {
+            if !security.policy.trust_policy_exclude.contains(&name) {
+                anyhow::bail!(
+                    "Security policy violation: Strict trust policy is active, and package '{}' has no digital signatures or build provenance (TrustLevel: Low)!\n  Configure trust_policy_exclude in kumo.config.json if you want to bypass this.",
+                    name
+                );
+            }
+        }
+
+        // 2. Trust Level Downgrade Protection Check (only if old lockfile is present)
+        if let Some(ref old) = old_lf {
             // Find if there was any version of this package in the old lockfile
             let old_pkg_opt = old.packages.iter()
                 .find(|(k, _)| {
@@ -1741,11 +1792,7 @@ fn validate_lockfile_trust(
             if let Some(old_pkg) = old_pkg_opt {
                 let old_has_sigs = old_pkg.resolution.signatures.as_ref().map_or(false, |s| !s.is_empty()) || old_pkg.resolution.npm_signature.is_some();
                 let old_has_atts = old_pkg.resolution.attestations.is_some();
-                let new_has_sigs = new_pkg.resolution.signatures.as_ref().map_or(false, |s| !s.is_empty()) || new_pkg.resolution.npm_signature.is_some();
-                let new_has_atts = new_pkg.resolution.attestations.is_some();
-
                 let old_trust = security.get_trust_level(old_has_sigs, old_has_atts);
-                let new_trust = security.get_trust_level(new_has_sigs, new_has_atts);
 
                 if !security.validate_trust_downgrade(&name, new_trust, old_trust, new_pkg.published_at.as_deref()) {
                     anyhow::bail!(
@@ -1754,6 +1801,52 @@ fn validate_lockfile_trust(
                     );
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+fn validate_typosquatting(
+    security: &SecurityEngine,
+    old_lf: &Option<Lockfile>,
+    deps: &HashMap<String, String>,
+    new_lf: &Lockfile,
+) -> Result<()> {
+    let mut existing_deps = std::collections::HashSet::new();
+    for k in deps.keys() {
+        existing_deps.insert(k.clone());
+    }
+    if let Some(ref old) = old_lf {
+        for k in old.dependencies.keys() {
+            existing_deps.insert(k.clone());
+        }
+    }
+
+    for key in new_lf.packages.keys() {
+        let parts: Vec<&str> = key.split('@').collect();
+        let name = if key.starts_with('@') {
+            if parts.len() > 1 {
+                format!("@{}", parts[1])
+            } else {
+                key.clone()
+            }
+        } else {
+            parts[0].to_string()
+        };
+
+        // Bypass check if the package is explicitly trusted or excluded from trust checks
+        if security.policy.trusted_packages.contains(&name) || security.policy.trust_policy_exclude.contains(&name) {
+            continue;
+        }
+
+        if let Some(similar_to) = security.check_typosquatting(&name, &existing_deps) {
+            anyhow::bail!(
+                "\n🚨 \x1b[31mSecurity Violation: Typosquatting Detected!\x1b[0m\n\
+                 The package '{}' is suspiciously similar to the popular package '{}'.\n\
+                 This is a common vector for supply chain attacks (e.g. TeamPCP/Shai-Hulud).\n\
+                 If you are sure you want to install this, please add it to 'trusted_packages' in your kumo.config.json.",
+                 name, similar_to
+            );
         }
     }
     Ok(())

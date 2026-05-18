@@ -242,4 +242,107 @@ impl SecurityEngine {
 
         curr_idx >= min_idx
     }
+
+    pub fn check_typosquatting(&self, name: &str, existing_deps: &HashSet<String>) -> Option<String> {
+        // List of top 100 most popular npm packages to check against
+        let popular_packages = [
+            "react", "react-dom", "vue", "angular", "express", "lodash", "axios", "chalk", 
+            "typescript", "vite", "esbuild", "tslib", "jest", "mocha", "dotenv", "webpack", 
+            "rollup", "next", "nuxt", "gatsby", "commander", "minimist", "rimraf", "mkdirp", 
+            "glob", "semver", "uuid", "moment", "inquirer", "debug", "bluebird", "async", 
+            "request", "got", "node-fetch", "undici", "color", "colors", "prettier", "eslint", 
+            "ts-node", "nodemon", "rxjs", "redux", "postcss", "tailwindcss", "autoprefixer", 
+            "babel-core", "babel-loader", "clean-css", "css-loader", "style-loader", "file-loader", 
+            "url-loader", "html-webpack-plugin", "mini-css-extract-plugin", "terser-webpack-plugin", 
+            "source-map-support", "chokidar", "globby", "fast-glob", "jsdom", "cheerio", 
+            "puppeteer", "playwright", "cypress", "tslint", "prettier-plugin-tailwindcss", 
+            "cross-env", "shelljs", "execa", "ora", "cli-spinners", "yargs", "minimist", 
+            "fs-extra", "graceful-fs", "promisify", "semver", "path-to-regexp", "body-parser", 
+            "cors", "morgan", "helmet", "compression", "cookie-parser", "jsonwebtoken", 
+            "bcrypt", "bcryptjs", "passport", "mongoose", "sequelize", "pg", "mysql2", 
+            "redis", "nodemailer", "socket.io", "ws", "graphql", "apollo-server"
+        ];
+
+        // Normalize the name (remove scope if any)
+        let name_normalized = if name.starts_with('@') {
+            name.split('/').nth(1).unwrap_or(name)
+        } else {
+            name
+        };
+
+        // Don't flag exact matches
+        if popular_packages.contains(&name_normalized) || existing_deps.contains(name) {
+            return None;
+        }
+
+        // Check Levenshtein distance against popular packages
+        for &pop in &popular_packages {
+            if is_suspiciously_similar(name_normalized, pop) {
+                return Some(pop.to_string());
+            }
+        }
+
+        // Check Levenshtein distance against project's existing dependencies
+        for dep in existing_deps {
+            let dep_normalized = if dep.starts_with('@') {
+                dep.split('/').nth(1).unwrap_or(dep)
+            } else {
+                dep
+            };
+            if is_suspiciously_similar(name_normalized, dep_normalized) {
+                return Some(dep.clone());
+            }
+        }
+
+        None
+    }
+}
+
+fn levenshtein_distance(a: &str, b: &str) -> usize {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    let len_a = a_chars.len();
+    let len_b = b_chars.len();
+
+    if len_a == 0 { return len_b; }
+    if len_b == 0 { return len_a; }
+
+    let mut dp = vec![0; len_b + 1];
+    for j in 0..=len_b {
+        dp[j] = j;
+    }
+
+    for i in 1..=len_a {
+        let mut prev = dp[0];
+        dp[0] = i;
+        for j in 1..=len_b {
+            let temp = dp[j];
+            if a_chars[i - 1] == b_chars[j - 1] {
+                dp[j] = prev;
+            } else {
+                dp[j] = 1 + std::cmp::min(prev, std::cmp::min(dp[j], dp[j - 1]));
+            }
+            prev = temp;
+        }
+    }
+    dp[len_b]
+}
+
+fn is_suspiciously_similar(a: &str, b: &str) -> bool {
+    let dist = levenshtein_distance(a, b);
+    if dist == 0 {
+        return false;
+    }
+
+    let len_a = a.chars().count();
+    let len_b = b.chars().count();
+    let max_len = std::cmp::max(len_a, len_b);
+
+    if max_len <= 4 {
+        dist == 1
+    } else if max_len <= 8 {
+        dist <= 2
+    } else {
+        dist <= 3
+    }
 }
