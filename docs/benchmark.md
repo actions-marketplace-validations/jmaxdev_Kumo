@@ -22,13 +22,19 @@ Important: these benchmarks were run on a local machine and can vary depending o
 
 ### Build benchmark results
 
-| Tool     | Version | Time (mean ± σ)           | Comparison | JS      | CSS       | Sourcemaps |
-| -------- | ------- | ------------------------: | ---------- | ------- | --------- | ---------- |
-| kumo     | 0.2.1   |       1441.48 ± 844.03 ms | 1.0x       | 5.90 MB | 38 B      | 14.77 MB   |
-| rolldown | 1.0.1   |       1643.20 ±  77.48 ms | 1.1x       | 5.22 MB | not found | 13.38 MB   |
-| vite     | 8.0.13  |       2030.91 ±  50.11 ms | 1.4x       | 5.20 MB | 1 B       | 13.21 MB   |
-| bun      | 1.3.14  |       2305.54 ± 107.89 ms | 1.6x       | 5.34 MB | not found | 13.11 MB   |
-| esbuild  | 0.28.0  |       3071.94 ± 268.44 ms | 2.1x       | 5.90 MB | 38 B      | 14.77 MB   |
-| rspack   | 2.0.3   |       3196.53 ± 134.77 ms | 2.2x       | 5.17 MB | not found | 12.76 MB   |
-| rsbuild  | 2.0.6   |       3423.19 ±  75.38 ms | 2.4x       | 5.17 MB | not found | 12.59 MB   |
-| rollup   | 4.60.4  |     64696.04 ± 1000.37 ms | 44.9x      | 5.33 MB | not found | 12.92 MB   |
+| Tool          | Version | Time (mean ± σ)           | Comparison | JS      | CSS       | Sourcemaps |
+| ------------- | ------- | ------------------------: | ---------- | ------- | --------- | ---------- |
+| kumo:rollup   | 0.2.1   |        951.18 ±  23.77 ms | 1.0x       | 5.33 MB | not found | 12.92 MB   |
+| kumo:rolldown | 0.2.1   |        951.62 ±  22.10 ms | 1.0x       | 5.22 MB | not found | 13.38 MB   |
+| kumo:rspack   | 0.2.1   |        959.00 ±  26.23 ms | 1.0x       | 5.17 MB | not found | 12.76 MB   |
+| kumo:bun      | 0.2.1   |        959.41 ±  25.17 ms | 1.0x       | 5.34 MB | not found | 13.11 MB   |
+| kumo:esbuild  | 0.2.1   |        961.31 ±  24.22 ms | 1.0x       | 5.90 MB | 38 B      | 14.77 MB   |
+| kumo:vite     | 0.2.1   |        967.41 ±  34.50 ms | 1.0x       | 5.20 MB | 1 B       | 13.21 MB   |
+| kumo:rsbuild  | 0.2.1   |        985.12 ±  46.07 ms | 1.0x       | 5.17 MB | not found | 12.59 MB   |
+| rolldown      | 1.0.1   |       1603.30 ±  22.60 ms | 1.7x       | 5.22 MB | not found | 13.38 MB   |
+| vite          | 8.0.13  |       2061.97 ±  55.36 ms | 2.2x       | 5.20 MB | 1 B       | 13.21 MB   |
+| bun           | 1.3.14  |       2270.79 ±  71.53 ms | 2.4x       | 5.34 MB | not found | 13.11 MB   |
+| esbuild       | 0.28.0  |       2929.91 ±  24.66 ms | 3.1x       | 5.90 MB | 38 B      | 14.77 MB   |
+| rspack        | 2.0.3   |       3361.95 ± 110.02 ms | 3.5x       | 5.17 MB | not found | 12.76 MB   |
+| rsbuild       | 2.0.6   |       3637.28 ± 120.24 ms | 3.8x       | 5.17 MB | not found | 12.59 MB   |
+| rollup        | 4.60.4  |     63788.59 ± 1261.40 ms | 67.1x      | 5.33 MB | not found | 12.92 MB   |
