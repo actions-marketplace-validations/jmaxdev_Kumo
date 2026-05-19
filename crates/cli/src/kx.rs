@@ -268,6 +268,10 @@ async fn install_and_get_bin_with_lockfile(
         let cpus = num_cpus::get();
         let concurrent_limit = cpus * 2;
 
+        let exec_version = lockfile.dependencies.get(name).map(|v| v.as_str()).unwrap_or("latest");
+        let exec_pkg_key = format!("{}@{}", name, exec_version);
+        let exec_deps = lockfile.packages.get(&exec_pkg_key).and_then(|p| p.dependencies.as_ref());
+
         let winners: HashMap<String, String> = lockfile
             .packages
             .keys()
@@ -285,21 +289,34 @@ async fn install_and_get_bin_with_lockfile(
 
                 let version = key.split('@').last().unwrap_or("");
                 
-                // Prioritize direct dependencies: if this package is a direct dependency
-                // of the root package, only allow the exact version resolved in lockfile.dependencies!
-                if let Some(direct_version) = lockfile.dependencies.get(&name) {
-                    if version == direct_version {
-                        acc.insert(name, key.clone());
-                    }
-                    return acc;
-                }
-
                 let is_better = if let Some(existing_key) = acc.get(&name) {
                     let existing_version = existing_key.split('@').last().unwrap_or("");
-                    if let (Ok(v1), Ok(v2)) = (semver::Version::parse(version), semver::Version::parse(existing_version)) {
-                        v1 > v2
+                    
+                    let mut this_matches = false;
+                    let mut existing_matches = false;
+                    if let Some(deps) = exec_deps {
+                        if let Some(range) = deps.get(&name) {
+                            if let Ok(req) = semver::VersionReq::parse(range) {
+                                if let Ok(v) = semver::Version::parse(version) {
+                                    this_matches = req.matches(&v);
+                                }
+                                if let Ok(ev) = semver::Version::parse(existing_version) {
+                                    existing_matches = req.matches(&ev);
+                                }
+                            }
+                        }
+                    }
+
+                    if this_matches && !existing_matches {
+                        true
+                    } else if !this_matches && existing_matches {
+                        false
                     } else {
-                        version > existing_version
+                        if let (Ok(v1), Ok(v2)) = (semver::Version::parse(version), semver::Version::parse(existing_version)) {
+                            v1 > v2
+                        } else {
+                            version > existing_version
+                        }
                     }
                 } else {
                     true
