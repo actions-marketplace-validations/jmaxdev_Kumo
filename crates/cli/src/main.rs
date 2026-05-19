@@ -415,7 +415,11 @@ async fn main() -> Result<()> {
         }
         Commands::Sandbox { script } => {
             println!("Executing '{}' in Kumo Sandbox...", script);
-            run_script(&script, vec![]).await?;
+            let mut command = security::sandbox::SandboxRunner::create_command(&std::env::current_dir()?, &script, false);
+            let status = command.status()?;
+            if !status.success() {
+                anyhow::bail!("Sandbox execution failed");
+            }
         }
         Commands::Update { pre, version } => handle_update(pre, version).await?,
         Commands::Config { subcommand } => match subcommand {
@@ -937,27 +941,7 @@ async fn run_install_scripts(
                 continue; // Skip this suspicious script!
             }
 
-            let mut command = if cfg!(windows) {
-                let mut cmd = std::process::Command::new("cmd");
-                cmd.arg("/c").arg(script_content);
-                cmd
-            } else {
-                let mut sh = std::process::Command::new("sh");
-                sh.arg("-c").arg(script_content);
-                sh
-            };
-
-            // Remove sensitive environment variables to prevent exfiltration
-            let sensitive_vars = [
-                "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_DEFAULT_REGION",
-                "GCP_PROJECT", "GOOGLE_APPLICATION_CREDENTIALS",
-                "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID",
-                "GITHUB_TOKEN", "GITHUB_AUTH_TOKEN", "NPM_TOKEN", "NPM_AUTH_TOKEN",
-                "STRIPE_API_KEY", "SENDGRID_API_KEY", "SLACK_BOT_TOKEN", "DISCORD_TOKEN"
-            ];
-            for var in &sensitive_vars {
-                command.env_remove(var);
-            }
+            let mut command = security::sandbox::SandboxRunner::create_command(pkg_dir, script_content, false);
 
             if let Some(deps_dir) = pkg_dir.parent() {
                 let real_deps_dir = if deps_dir

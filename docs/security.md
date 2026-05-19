@@ -30,8 +30,8 @@ kumo config init
 
 Kumo implements several strategies to protect your project from malicious actors in the dependency chain.
 
-### 1. Script Blocking, Sanitization & Path Protection
-Many supply chain attacks use `postinstall` scripts to execute malicious code. Kumo blocks these scripts by default. 
+### 1. OS-Level Script Sandboxing & Path Isolation
+Many supply chain attacks use `postinstall` scripts to execute malicious code. Kumo blocks these scripts by default.
 
 However, you can whitelist specific packages you trust while keeping the global block active:
 ```json
@@ -42,9 +42,12 @@ However, you can whitelist specific packages you trust while keeping the global 
 ```
 This allows only the specified packages to run their installation scripts.
 
-To guarantee maximum protection, even when scripts are explicitly allowed, Kumo:
-* **Sanitizes the Environment:** Automatically strips sensitive variables (like `AWS_ACCESS_KEY_ID`, `GCP_PROJECT`, `GITHUB_TOKEN`, `NPM_TOKEN`, etc.) from the command context, preventing malicious scripts from exfiltrating credentials.
-* **Checks File Path Access:** Pre-scans script contents and blocks execution if they contain patterns referencing sensitive locations (e.g. `.ssh`, `.aws`, `.claudecode`, `.cursor`, `.vscode`, `.env`).
+To guarantee absolute protection, when scripts are allowed, Kumo executes them inside a **Native OS-Level Sandbox** that isolates the process at runtime:
+
+* **Linux Isolation (Bubblewrap):** If `bwrap` is available, Kumo spawns the script in an isolated namespace (`--unshare-all`). It mounts the base system as read-only (`--ro-bind`) and restricts write access *exclusively* to the package's local directory. It also unshares and disables the network namespace (`--unshare-net`).
+* **macOS Isolation (Apple Sandbox):** Kumo leverages the kernel-level `sandbox-exec` utility with a strict custom Scheme profile (`(deny default)`). It denies all network actions and limits file system write permissions solely to the target package directory and system temp folders.
+* **Windows Environment & Network Virtualization:** To protect files on Windows without requiring administrative privileges, Kumo redirects the `HOME`, `USERPROFILE`, `APPDATA`, and `LOCALAPPDATA` environment variables to a temporary, empty sandbox folder. Any attempt by a malicious script to resolve the user's home directories to steal `.ssh` or `.aws` keys will only see an empty cage. It also disables outgoing internet requests by poisoning standard connection variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NODE_TLS_REJECT_UNAUTHORIZED`).
+* **Resource Quotas (Windows Job Objects):** Prevents CPU/Memory exhaustion and Fork Bombs by wrapping child executions in a constrained Job Object.
 
 ### 2. Typosquatting Protection (Levenshtein Engine)
 Attackers often release packages with names very similar to popular ones (e.g. `axois-utils` or `chalk-tempalte`). Kumo provides two layers of defense against this:
