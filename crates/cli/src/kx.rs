@@ -17,8 +17,8 @@ mod common;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Intercept the first Ctrl-C so that child processes (like cmd.exe) can handle it,
-    // preventing the terminal from getting bugged with overlapping prompts.
+
+
     tokio::spawn(async {
         if tokio::signal::ctrl_c().await.is_ok() {
             if tokio::signal::ctrl_c().await.is_ok() {
@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
 }
 
 async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &security::SecurityEngine, resolver: &Resolver) -> Result<()> {
-    // Intercept "create" command
+
     if cli.binary == "create" {
         if cli.args.is_empty() {
             anyhow::bail!("'create' requires a package name. Example: kx create vite");
@@ -65,7 +65,7 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
         }
     }
 
-    // 1. Try local execution first (dependencies/.bin walking up parent directories)
+
     let deps_dir_name = common::get_deps_dir();
     let current_dir = std::env::current_dir()?;
     let mut bin_dirs = Vec::new();
@@ -96,7 +96,7 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
         }
     }
 
-    // 2. Resolve version to check global cache (~/.kumo/kx)
+
     let mut root_deps = HashMap::new();
     root_deps.insert(cli.binary.clone(), "latest".to_string());
     let lockfile = resolver.resolve_tree(&root_deps).await?;
@@ -125,7 +125,7 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
                     if map.contains_key(&un_scoped) {
                         exec_bin_name = un_scoped;
                     } else if map.contains_key(&exec_bin_name) {
-                        // Keep as is
+
                     } else if let Some(first_key) = map.keys().next() {
                         if map.len() == 1 {
                             exec_bin_name = first_key.to_string();
@@ -150,14 +150,14 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
         for bin_name in &exec_possible_bins {
             let bin_path = global_bin_dir.join(bin_name);
             if bin_path.exists() {
-                // Update access time for GC
+
                 let _ = filetime::set_file_mtime(&kx_dir, filetime::FileTime::now());
                 return execute_binary(&bin_path, cli.args, &global_bin_dir);
             }
         }
     }
 
-    // 3. Not found anywhere, ask to install
+
     println!("Package '{}' not found in cache.", cli.binary);
     print!("Do you want to install and execute it using Kumo? (y/N): ");
     use std::io::Write;
@@ -185,7 +185,7 @@ fn execute_binary(path: &std::path::Path, args: Vec<String>, bin_dir: &std::path
 
     command.args(args);
     
-    // Set PATH and NODE_PATH
+
     let old_path = std::env::var_os("PATH").unwrap_or_default();
     let mut paths = vec![bin_dir.to_path_buf()];
     paths.extend(std::env::split_paths(&old_path));
@@ -193,7 +193,7 @@ fn execute_binary(path: &std::path::Path, args: Vec<String>, bin_dir: &std::path
     
     command.env("PATH", new_path);
     
-    // Add parent of bin_dir/../node_modules to NODE_PATH
+
     if let Some(parent) = bin_dir.parent() {
         let nm_path = parent.join("node_modules");
         if nm_path.exists() {
@@ -222,7 +222,7 @@ async fn install_and_get_bin_with_lockfile(
     lockfile: &Lockfile,
     kx_dir: &std::path::PathBuf,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf)> {
-    // Security scan
+
     println!("Scanning for vulnerabilities...");
     for (pkg_name, pkg) in &lockfile.packages {
         let version = pkg.resolution.tarball.split('/').last().unwrap_or("");
@@ -255,7 +255,7 @@ async fn install_and_get_bin_with_lockfile(
             };
             let dest = nm_dir.join(pkg_name.replace('/', std::path::MAIN_SEPARATOR_STR));
             
-            // Download and extract
+
             let client = reqwest::Client::new();
             let response = client.get(&pkg.resolution.tarball).send().await?;
             let bytes = response.bytes().await?;
@@ -263,7 +263,7 @@ async fn install_and_get_bin_with_lockfile(
             let file_map = kumo_core::tarball::extract_and_store(store, &bytes).await?;
             kumo_core::package::link_package(store, &dest, &file_map).await?;
             
-            // Create shims if it has binaries
+
             if let Some(bin) = &pkg.bin {
                 match bin {
                     serde_json::Value::String(path) => {
@@ -287,7 +287,7 @@ async fn install_and_get_bin_with_lockfile(
         }
     }
 
-    // Try to find the binary path in the newly installed package
+
     let possible_bins = if cfg!(target_os = "windows") {
         vec![format!("{}.cmd", exec_bin_name), format!("{}.exe", exec_bin_name), format!("{}.bat", exec_bin_name), exec_bin_name.to_string()]
     } else {

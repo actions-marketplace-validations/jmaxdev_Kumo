@@ -35,21 +35,31 @@ impl SandboxRunner {
         let fake_home = pkg_dir.join(".kumo_sandbox_home");
         let _ = std::fs::create_dir_all(&fake_home);
 
+        let allowed_vars = [
+            "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC",
+            "TEMP", "TMP", "TMPDIR",
+            "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS",
+            "LANG", "LC_ALL", "LC_CTYPE", "TERM", "COLORTERM",
+            "NODE_PATH", "NODE_NO_WARNINGS",
+        ];
+
+        let mut preserved: Vec<(String, String)> = Vec::new();
+        for key in &allowed_vars {
+            if let Ok(val) = std::env::var(key) {
+                preserved.push((key.to_string(), val));
+            }
+        }
+
+        cmd.env_clear();
+
+        for (key, val) in &preserved {
+            cmd.env(key, val);
+        }
+
         cmd.env("HOME", &fake_home);
         cmd.env("USERPROFILE", &fake_home);
         cmd.env("APPDATA", fake_home.join("AppData"));
         cmd.env("LOCALAPPDATA", fake_home.join("LocalAppData"));
-
-        let sensitive_vars = [
-            "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_DEFAULT_REGION",
-            "GCP_PROJECT", "GOOGLE_APPLICATION_CREDENTIALS",
-            "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID",
-            "GITHUB_TOKEN", "GITHUB_AUTH_TOKEN", "NPM_TOKEN", "NPM_AUTH_TOKEN",
-            "STRIPE_API_KEY", "SENDGRID_API_KEY", "SLACK_BOT_TOKEN", "DISCORD_TOKEN"
-        ];
-        for var in &sensitive_vars {
-            cmd.env_remove(var);
-        }
     }
 
     #[cfg(target_os = "linux")]

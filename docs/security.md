@@ -25,6 +25,7 @@ kumo config init
 | `trust_policy` | String | Enforces signature and provenance checks. Set to `"no-downgrade"` to prevent package updates that have a weaker trust level than previously installed releases. Options: `"none"`, `"no-downgrade"`. | `"none"` |
 | `trust_policy_exclude` | Array | A list of package names that are excluded from the trust policy check. | `[]` |
 | `trust_policy_ignore_after` | Number | The number of minutes after publication to ignore trust verification (allows older releases without provenance). | `10080` (7 days) |
+| `protected_packages` | Array | A custom list of highly sensitive packages to protect from typosquatting (e.g., `["react", "next"]`). If empty, only existing project dependencies are protected. | `[]` |
 
 ## Mitigating Supply Chain Attacks
 
@@ -47,12 +48,13 @@ To guarantee absolute protection, when scripts are allowed, Kumo executes them i
 * **Linux Isolation (Bubblewrap):** If `bwrap` is available, Kumo spawns the script in an isolated namespace (`--unshare-all`). It mounts the base system as read-only (`--ro-bind`) and restricts write access *exclusively* to the package's local directory. It also unshares and disables the network namespace (`--unshare-net`).
 * **macOS Isolation (Apple Sandbox):** Kumo leverages the kernel-level `sandbox-exec` utility with a strict custom Scheme profile (`(deny default)`). It denies all network actions and limits file system write permissions solely to the target package directory and system temp folders.
 * **Windows Environment & Network Virtualization:** To protect files on Windows without requiring administrative privileges, Kumo redirects the `HOME`, `USERPROFILE`, `APPDATA`, and `LOCALAPPDATA` environment variables to a temporary, empty sandbox folder. Any attempt by a malicious script to resolve the user's home directories to steal `.ssh` or `.aws` keys will only see an empty cage. It also disables outgoing internet requests by poisoning standard connection variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NODE_TLS_REJECT_UNAUTHORIZED`).
+* **Environment Variable Whitelisting:** Across all operating systems, Kumo completely clears the host environment variables before spawning the script. It uses a strict whitelist (allowing only essential system variables like `PATH`, `TEMP`, and Node-specific ones) instead of a blacklist. This guarantees that no custom secrets, API keys, or cloud tokens are ever exposed to third-party scripts.
 * **Resource Quotas (Windows Job Objects):** Prevents CPU/Memory exhaustion and Fork Bombs by wrapping child executions in a constrained Job Object.
 
 ### 2. Typosquatting Protection (Levenshtein Engine)
 Attackers often release packages with names very similar to popular ones (e.g. `axois-utils` or `chalk-tempalte`). Kumo provides two layers of defense against this:
 1. **Age Threshold (`minimum_release_age`):** Enforces a default 24-hour minimum age for package releases, ensuring freshly published malicious copycats are blocked.
-2. **Levenshtein Distance Check:** Compares resolved package names against a built-in dictionary of the top 100 most popular npm packages and the project's existing dependencies. If a package has a Levenshtein distance ≤ 2 (or ≤ 3 for longer names), Kumo automatically flags it and halts the installation with a typosquatting warning.
+2. **Levenshtein Distance Check:** Compares newly resolved package names against the project's **existing dependencies** and any names you define in your `protected_packages` config array. If a new package has a Levenshtein distance ≤ 2 (or ≤ 3 for longer names) to any of these trusted names, Kumo automatically flags it and halts the installation with a typosquatting warning.
 
 ### 3. Vulnerability Scanning
 Kumo integrates with the **OSV (Open Source Vulnerabilities)** database. During the resolution phase, it checks every package version. If a vulnerability matches the `min_severity` threshold, the installation is aborted.

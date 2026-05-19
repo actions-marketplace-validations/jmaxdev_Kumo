@@ -102,8 +102,8 @@ mod common;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Intercept the first Ctrl-C so that child processes (like cmd.exe) can handle it,
-    // preventing the terminal from getting bugged with overlapping prompts.
+
+
     tokio::spawn(async {
         if tokio::signal::ctrl_c().await.is_ok() {
             if tokio::signal::ctrl_c().await.is_ok() {
@@ -919,7 +919,7 @@ async fn run_install_scripts(
 ) -> Result<()> {
     for script_name in &["preinstall", "install", "postinstall"] {
         if let Some(script_content) = scripts.get(*script_name) {
-            // Check for suspicious access to sensitive files/directories (e.g. .ssh, .aws, .claudecode, .cursor, .vscode, .env)
+
             let suspicious_patterns = [
                 ".ssh", ".aws", ".claudecode", ".cursor", ".vscode", ".env"
             ];
@@ -938,7 +938,7 @@ async fn run_install_scripts(
                     "🚨 \x1b[31mSecurity Violation:\x1b[0m Script '{}' in package {:?} blocked! It attempts to access sensitive paths ({})",
                     script_name, pkg_dir.file_name().unwrap_or_default(), script_content
                 );
-                continue; // Skip this suspicious script!
+                continue;
             }
 
             let mut command = security::sandbox::SandboxRunner::create_command(pkg_dir, script_content, false);
@@ -1204,12 +1204,12 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
         }
     }
 
-    // Default cache configuration for common scripts like "build"
+
     if !found_custom_cache {
         if name == "build" {
             use_cache = true;
             inputs = vec![
-                // General source folder
+
                 "src/**/*.ts".to_string(),
                 "src/**/*.tsx".to_string(),
                 "src/**/*.js".to_string(),
@@ -1217,7 +1217,7 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
                 "src/**/*.cjs".to_string(),
                 "src/**/*.mjs".to_string(),
                 
-                // Root level files and other common folders
+
                 "*.ts".to_string(),
                 "*.tsx".to_string(),
                 "*.js".to_string(),
@@ -1229,7 +1229,7 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
                 "lib/**/*.cjs".to_string(),
                 "lib/**/*.mjs".to_string(),
                 
-                // Next.js specific folders
+
                 "app/**/*.ts".to_string(),
                 "app/**/*.tsx".to_string(),
                 "app/**/*.js".to_string(),
@@ -1243,7 +1243,7 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
                 "components/**/*.js".to_string(),
                 "components/**/*.jsx".to_string(),
 
-                // Common config files
+
                 "package.json".to_string(),
                 "tsconfig.json".to_string(),
                 "vite.config.ts".to_string(),
@@ -1364,7 +1364,7 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
                 shell_cmd.args(&args);
 
                 if use_cache {
-                    // Force colored output since we are piping
+
                     shell_cmd.env("FORCE_COLOR", "1");
                     
                     shell_cmd.stdout(std::process::Stdio::piped());
@@ -1458,7 +1458,7 @@ async fn run_script(name: &str, args: Vec<String>) -> Result<()> {
         }
     }
 
-    // 2. Fallback: Try to find binary in .bin (walking up parent directories)
+
     let deps_dir = common::get_deps_dir();
     let mut bin_dirs = Vec::new();
     let mut current = Some(project_dir.as_path());
@@ -1656,7 +1656,7 @@ async fn handle_update(include_pre: bool, target_version: Option<String>) -> Res
         archive.unpack(&temp_dir)?;
     };
 
-    // Robust binary discovery: search everywhere in temp_dir
+
     let mut found_kumo = None;
     let mut found_kx = None;
 
@@ -1744,7 +1744,7 @@ fn validate_lockfile_trust(
         let new_has_atts = new_pkg.resolution.attestations.is_some();
         let new_trust = security.get_trust_level(new_has_sigs, new_has_atts);
 
-        // 1. Strict Trust Policy Check
+
         if security.policy.trust_policy == "strict" && new_trust == security::TrustLevel::Low {
             if !security.policy.trust_policy_exclude.contains(&name) {
                 anyhow::bail!(
@@ -1754,9 +1754,9 @@ fn validate_lockfile_trust(
             }
         }
 
-        // 2. Trust Level Downgrade Protection Check (only if old lockfile is present)
+
         if let Some(ref old) = old_lf {
-            // Find if there was any version of this package in the old lockfile
+
             let old_pkg_opt = old.packages.iter()
                 .find(|(k, _)| {
                     let k_parts: Vec<&str> = k.split('@').collect();
@@ -1818,7 +1818,7 @@ fn validate_typosquatting(
             parts[0].to_string()
         };
 
-        // Bypass check if the package is explicitly trusted or excluded from trust checks
+
         if security.policy.trusted_packages.contains(&name) || security.policy.trust_policy_exclude.contains(&name) {
             continue;
         }

@@ -40,6 +40,7 @@ pub struct Policy {
     pub trust_policy: String,
     pub trust_policy_exclude: HashSet<String>,
     pub trust_policy_ignore_after: u64,
+    pub protected_packages: HashSet<String>,
 }
 
 impl Default for Policy {
@@ -57,7 +58,8 @@ impl Default for Policy {
             trusted_packages: HashSet::new(),
             trust_policy: "none".to_string(),
             trust_policy_exclude: HashSet::new(),
-            trust_policy_ignore_after: 10080, // 7 days in minutes
+            trust_policy_ignore_after: 10080,
+            protected_packages: HashSet::new(),
         }
     }
 }
@@ -104,7 +106,7 @@ impl SecurityEngine {
             return true;
         }
 
-        // Check trust_policy_ignore_after
+
         if self.policy.trust_policy_ignore_after > 0 {
             if let Some(pub_at) = published_at {
                 if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(pub_at) {
@@ -113,7 +115,7 @@ impl SecurityEngine {
                         .signed_duration_since(dt.with_timezone(&chrono::Utc))
                         .num_minutes();
                     if age > self.policy.trust_policy_ignore_after as i64 {
-                        return true; // Ignored because package is too old
+                        return true;
                     }
                 }
             }
@@ -246,45 +248,26 @@ impl SecurityEngine {
     }
 
     pub fn check_typosquatting(&self, name: &str, existing_deps: &HashSet<String>) -> Option<String> {
-        // List of top 100 most popular npm packages to check against
-        let popular_packages = [
-            "react", "react-dom", "vue", "angular", "express", "lodash", "axios", "chalk", 
-            "typescript", "vite", "esbuild", "tslib", "jest", "mocha", "dotenv", "webpack", 
-            "rollup", "next", "nuxt", "gatsby", "commander", "minimist", "rimraf", "mkdirp", 
-            "glob", "semver", "uuid", "moment", "inquirer", "debug", "bluebird", "async", 
-            "request", "got", "node-fetch", "undici", "color", "colors", "prettier", "eslint", 
-            "ts-node", "nodemon", "rxjs", "redux", "postcss", "tailwindcss", "autoprefixer", 
-            "babel-core", "babel-loader", "clean-css", "css-loader", "style-loader", "file-loader", 
-            "url-loader", "html-webpack-plugin", "mini-css-extract-plugin", "terser-webpack-plugin", 
-            "source-map-support", "chokidar", "globby", "fast-glob", "jsdom", "cheerio", 
-            "puppeteer", "playwright", "cypress", "tslint", "prettier-plugin-tailwindcss", 
-            "cross-env", "shelljs", "execa", "ora", "cli-spinners", "yargs", "minimist", 
-            "fs-extra", "graceful-fs", "promisify", "semver", "path-to-regexp", "body-parser", 
-            "cors", "morgan", "helmet", "compression", "cookie-parser", "jsonwebtoken", 
-            "bcrypt", "bcryptjs", "passport", "mongoose", "sequelize", "pg", "mysql2", 
-            "redis", "nodemailer", "socket.io", "ws", "graphql", "apollo-server"
-        ];
 
-        // Normalize the name (remove scope if any)
         let name_normalized = if name.starts_with('@') {
             name.split('/').nth(1).unwrap_or(name)
         } else {
             name
         };
 
-        // Don't flag exact matches
-        if popular_packages.contains(&name_normalized) || existing_deps.contains(name) {
+
+        if self.policy.protected_packages.contains(name_normalized) || existing_deps.contains(name) {
             return None;
         }
 
-        // Check Levenshtein distance against popular packages
-        for &pop in &popular_packages {
+
+        for pop in &self.policy.protected_packages {
             if is_suspiciously_similar(name_normalized, pop) {
                 return Some(pop.to_string());
             }
         }
 
-        // Check Levenshtein distance against project's existing dependencies
+
         for dep in existing_deps {
             let dep_normalized = if dep.starts_with('@') {
                 dep.split('/').nth(1).unwrap_or(dep)
