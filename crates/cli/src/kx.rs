@@ -285,6 +285,15 @@ async fn install_and_get_bin_with_lockfile(
 
                 let version = key.split('@').last().unwrap_or("");
                 
+                // Prioritize direct dependencies: if this package is a direct dependency
+                // of the root package, only allow the exact version resolved in lockfile.dependencies!
+                if let Some(direct_version) = lockfile.dependencies.get(&name) {
+                    if version == direct_version {
+                        acc.insert(name, key.clone());
+                    }
+                    return acc;
+                }
+
                 let is_better = if let Some(existing_key) = acc.get(&name) {
                     let existing_version = existing_key.split('@').last().unwrap_or("");
                     if let (Ok(v1), Ok(v2)) = (semver::Version::parse(version), semver::Version::parse(existing_version)) {
