@@ -8,7 +8,15 @@ use std::process::Command;
 #[command(version)]
 #[command(about = "Kumo Execute: Run binaries from dependencies/.bin or node_modules/.bin", long_about = None)]
 struct KxCli {
-    binary: String,
+    #[arg(long, help = "Prune cached kx packages older than 7 days")]
+    prune: bool,
+
+    #[arg(long = "full-prune", help = "When pruning, delete all packages instead of only those older than 7 days")]
+    full_prune: bool,
+
+    #[arg(required_unless_present_any = ["prune", "full_prune"])]
+    binary: Option<String>,
+
     #[arg(trailing_var_arg = true)]
     args: Vec<String>,
 }
@@ -17,8 +25,6 @@ mod common;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-
-
     tokio::spawn(async {
         if tokio::signal::ctrl_c().await.is_ok() {
             if tokio::signal::ctrl_c().await.is_ok() {
@@ -28,6 +34,11 @@ async fn main() -> Result<()> {
     });
 
     let cli = KxCli::parse();
+    if cli.prune || cli.full_prune {
+        prune_kx_cache(cli.full_prune).await?;
+        return Ok(());
+    }
+
     let update_check_handle = tokio::spawn(common::check_for_new_version());
     
     let (store, security, resolver) = common::init_components().await?;
@@ -41,8 +52,9 @@ async fn main() -> Result<()> {
 }
 
 async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &security::SecurityEngine, resolver: &Resolver) -> Result<()> {
+    let mut binary = cli.binary.clone().unwrap();
 
-    if cli.binary == "create" {
+    if binary == "create" {
         if cli.args.is_empty() {
             anyhow::bail!("'create' requires a package name. Example: kx create vite");
         }
@@ -52,12 +64,12 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
             if let Some(slash_idx) = target.find('/') {
                 let (scope, name) = target.split_at(slash_idx);
                 let name = &name[1..];
-                cli.binary = format!("{}/create-{}", scope, name);
+                binary = format!("{}/create-{}", scope, name);
             } else {
-                cli.binary = format!("{}/create", target);
+                binary = format!("{}/create", target);
             }
         } else {
-            cli.binary = format!("create-{}", target);
+            binary = format!("create-{}", target);
         }
     }
 
@@ -78,9 +90,9 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
     }
 
     let possible_bins = if cfg!(target_os = "windows") {
-        vec![format!("{}.cmd", cli.binary), format!("{}.exe", cli.binary), format!("{}.bat", cli.binary), cli.binary.clone()]
+        vec![format!("{}.cmd", binary), format!("{}.exe", binary), format!("{}.bat", binary), binary.clone()]
     } else {
-        vec![cli.binary.clone()]
+        vec![binary.clone()]
     };
 
     for bin_dir in &bin_dirs {
@@ -94,15 +106,15 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
 
 
     let mut root_deps = HashMap::new();
-    root_deps.insert(cli.binary.clone(), "latest".to_string());
+    root_deps.insert(binary.clone(), "latest".to_string());
     let lockfile = resolver.resolve_tree(&root_deps).await?;
     
     let main_pkg_id = lockfile.packages.keys()
-        .find(|k| k.starts_with(&cli.binary))
-        .ok_or_else(|| anyhow!("Could not find package {} in resolution", cli.binary))?;
+        .find(|k| k.starts_with(&binary))
+        .ok_or_else(|| anyhow!("Could not find package {} in resolution", binary))?;
     let version = main_pkg_id.split('@').last().unwrap_or("latest");
 
-    let mut exec_bin_name = cli.binary.clone();
+    let mut exec_bin_name = binary.clone();
     if let Some(pkg) = lockfile.packages.get(main_pkg_id) {
         if let Some(bin) = &pkg.bin {
             match bin {
@@ -133,7 +145,7 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
         }
     }
 
-    let kx_dir = dirs::home_dir().unwrap().join(".kumo").join("kx").join(format!("{}@{}", cli.binary, version));
+    let kx_dir = dirs::home_dir().unwrap().join(".kumo").join("kx").join(format!("{}@{}", binary, version));
     let global_bin_dir = kx_dir.join(".bin");
     
     let exec_possible_bins = if cfg!(target_os = "windows") {
@@ -154,7 +166,7 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
     }
 
 
-    println!("Package '{}' not found in cache.", cli.binary);
+    println!("Package '{}' not found in cache.", binary);
     print!("Do you want to install and execute it using Kumo? (y/N): ");
     use std::io::Write;
     std::io::stdout().flush()?;
@@ -163,7 +175,7 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
     std::io::stdin().read_line(&mut input)?;
 
     if input.trim().to_lowercase() == "y" {
-        let (bin_path, bin_dir) = install_and_get_bin_with_lockfile(store, resolver, security, &cli.binary, &exec_bin_name, &lockfile, &kx_dir).await?;
+        let (bin_path, bin_dir) = install_and_get_bin_with_lockfile(store, resolver, security, &binary, &exec_bin_name, &lockfile, &kx_dir).await?;
         execute_binary(&bin_path, cli.args, &bin_dir)
     } else {
         anyhow::bail!("Execution cancelled.");
@@ -256,9 +268,43 @@ async fn install_and_get_bin_with_lockfile(
         let cpus = num_cpus::get();
         let concurrent_limit = cpus * 2;
 
-        let packages_to_install: Vec<(String, resolver::LockedPackage)> = lockfile.packages
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
+        let winners: HashMap<String, String> = lockfile
+            .packages
+            .keys()
+            .fold(HashMap::new(), |mut acc, key| {
+                let name = if key.starts_with('@') {
+                    let parts: Vec<&str> = key.split('@').collect();
+                    if parts.len() > 1 {
+                        format!("@{}", parts[1])
+                    } else {
+                        key.to_string()
+                    }
+                } else {
+                    key.split('@').next().unwrap_or(key).to_string()
+                };
+
+                let version = key.split('@').last().unwrap_or("");
+                
+                let is_better = if let Some(existing_key) = acc.get(&name) {
+                    let existing_version = existing_key.split('@').last().unwrap_or("");
+                    if let (Ok(v1), Ok(v2)) = (semver::Version::parse(version), semver::Version::parse(existing_version)) {
+                        v1 > v2
+                    } else {
+                        version > existing_version
+                    }
+                } else {
+                    true
+                };
+
+                if is_better {
+                    acc.insert(name, key.clone());
+                }
+                acc
+            });
+
+        let packages_to_install: Vec<(String, resolver::LockedPackage)> = winners
+            .values()
+            .filter_map(|key| lockfile.packages.get(key).map(|p| (key.clone(), p.clone())))
             .collect();
 
         let client = reqwest::Client::new();
@@ -335,4 +381,43 @@ async fn create_shim(
     target: &std::path::Path,
 ) -> Result<()> {
     common::create_shim(bin_dir, name, target).await
+}
+
+async fn prune_kx_cache(full: bool) -> Result<()> {
+    let kx_root = dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".kumo")
+        .join("kx");
+    if !kx_root.exists() {
+        println!("KX cache is already empty.");
+        return Ok(());
+    }
+
+    if full {
+        println!("Performing FULL prune of KX cache...");
+        tokio::fs::remove_dir_all(&kx_root).await?;
+        tokio::fs::create_dir_all(&kx_root).await?;
+        println!("KX cache cleared.");
+    } else {
+        println!("Pruning old KX packages (older than 7 days)...");
+        let mut count = 0;
+        let mut entries = tokio::fs::read_dir(&kx_root).await?;
+        let now = std::time::SystemTime::now();
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Ok(metadata) = std::fs::metadata(&path) {
+                    let accessed = metadata.accessed().unwrap_or_else(|_| {
+                        metadata.modified().unwrap_or(now)
+                    });
+                    if now.duration_since(accessed).map(|d| d.as_secs() > 7 * 24 * 3600).unwrap_or(false) {
+                        let _ = tokio::fs::remove_dir_all(&path).await;
+                        count += 1;
+                    }
+                }
+            }
+        }
+        println!("Removed {} old KX packages.", count);
+    }
+    Ok(())
 }
