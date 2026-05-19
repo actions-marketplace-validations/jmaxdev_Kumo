@@ -132,6 +132,37 @@ impl Resolver {
         self.resolve_package_internal(&name, &range).await
     }
 
+    /// Resolves a package by invalidating the metadata cache first (fresh fetch).
+    pub async fn resolve_package_fresh(&self, name: &str, range: &str) -> Result<PackageMetadata> {
+        let cache_dir = dirs::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".kumo")
+            .join("cache")
+            .join("metadata");
+        let cache_path = cache_dir.join(format!("{}.json", name.replace('/', "__")));
+        let _ = std::fs::remove_file(&cache_path);
+
+        self.resolve_package_internal(name, range).await
+    }
+
+    /// Gets the absolute latest version of a package from the registry (dist-tags.latest).
+    pub async fn get_latest_version(&self, name: &str) -> Result<String> {
+        let cache_dir = dirs::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".kumo")
+            .join("cache")
+            .join("metadata");
+        let cache_path = cache_dir.join(format!("{}.json", name.replace('/', "__")));
+        let _ = std::fs::remove_file(&cache_path);
+
+        let response = self.fetch_and_cache_metadata(name, &cache_path).await?;
+        response
+            .dist_tags
+            .get("latest")
+            .cloned()
+            .ok_or_else(|| anyhow!("No latest tag found for {}", name))
+    }
+
     async fn resolve_package_internal(&self, name: &str, range: &str) -> Result<PackageMetadata> {
         let cache_dir = dirs::home_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("."))

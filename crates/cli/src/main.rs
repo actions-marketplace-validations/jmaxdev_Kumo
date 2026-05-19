@@ -67,6 +67,26 @@ enum Commands {
         pre: bool,
         version: Option<String>,
     },
+    #[command(alias = "up")]
+    Upgrade {
+        /// Specific packages to upgrade (empty = all)
+        packages: Vec<String>,
+        /// Upgrade to the absolute latest version, ignoring semver ranges
+        #[arg(short = 'L', long)]
+        latest: bool,
+        /// Only upgrade dependencies (skip devDependencies)
+        #[arg(long)]
+        prod: bool,
+        /// Only upgrade devDependencies (skip dependencies)
+        #[arg(long)]
+        dev: bool,
+        /// Show available updates without applying them
+        #[arg(short = 'n', long)]
+        dry_run: bool,
+        /// Show detailed installation progress
+        #[arg(long)]
+        log: bool,
+    },
     #[command(external_subcommand)]
     External(Vec<String>),
 }
@@ -163,6 +183,10 @@ async fn main() -> Result<()> {
             commands::sandbox::execute(script).await?;
         }
         Commands::Update { pre, version } => commands::update::execute(pre, version).await?,
+        Commands::Upgrade { packages, latest, prod, dev, dry_run, log } => {
+            let config_path = config_path.ok_or_else(|| anyhow::anyhow!("Neither kumo.json nor package.json found in current directory"))?;
+            commands::upgrade::execute(&store, &resolver, &security, packages, latest, prod, dev, dry_run, log, config_path).await?;
+        }
         Commands::Config { subcommand } => {
             commands::config::execute(subcommand).await?;
         }

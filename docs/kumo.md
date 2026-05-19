@@ -144,6 +144,33 @@ Executes a script within the Kumo Sandbox for secure execution.
 kumo sandbox <script-path>
 ```
 
+### `upgrade [packages...]` (alias: `up`)
+Updates project dependencies to their latest available versions. By default, it respects semver ranges declared in your configuration file and updates both `dependencies` and `devDependencies`.
+
+- `[packages...]`: Specific packages to upgrade. If omitted, all dependencies are checked.
+- `-L, --latest`: Upgrade to the absolute latest version, ignoring semver ranges.
+- `--prod`: Only upgrade `dependencies` (skip `devDependencies`).
+- `--dev`: Only upgrade `devDependencies` (skip `dependencies`).
+- `-n, --dry-run`: Show available updates without applying them.
+- `--log`: Show detailed installation progress.
+
+```bash
+# Upgrade all dependencies within semver ranges
+kumo upgrade
+
+# Upgrade specific packages
+kumo upgrade express typescript
+
+# Upgrade to absolute latest versions (ignore semver ranges)
+kumo upgrade --latest
+
+# Only upgrade production dependencies
+kumo upgrade --prod
+
+# Preview available updates without changing anything
+kumo upgrade --dry-run
+```
+
 ### `config`
 Manage Kumo configuration and security policies.
 
@@ -166,7 +193,7 @@ kumo config default block_deprecated false
 ```
 
 ### `update [--pre]`
-Checks for and installs the latest version of the Kumo CLI from GitHub.
+Checks for and installs the latest version of the **Kumo CLI binary** from GitHub. This does not affect project dependencies — use `kumo upgrade` for that.
 - `--pre`: Includes pre-releases (alpha, beta, rc) in the update search.
 
 ```bash

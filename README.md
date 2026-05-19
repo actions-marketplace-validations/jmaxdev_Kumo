@@ -111,6 +111,13 @@ For a complete breakdown of features, see the [Security & Config Documentation](
   kumo remove express
   # Alias: kumo rm express
   ```
+* **Upgrade dependencies** to their latest versions:
+  ```bash
+  kumo upgrade
+  # Specific packages: kumo upgrade express
+  # Ignore semver ranges: kumo upgrade --latest
+  # Preview only: kumo upgrade --dry-run
+  ```
 
 ### Maintenance & Diagnostics
 * **Scan for vulnerabilities** using OSV:
