@@ -42,20 +42,37 @@ pub async fn link_package(
             let dest_clone = dest.clone();
 
             let result = tokio::task::spawn_blocking(move || {
-                if reflink_copy::reflink(&src_clone, &dest_clone).is_ok() {
-                    return Ok(());
-                }
-                if std::fs::hard_link(&src_clone, &dest_clone).is_ok() {
-                    return Ok(());
-                }
-                match std::fs::copy(&src_clone, &dest_clone) {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(anyhow::anyhow!("IO Error: {} (Source: {:?}, Dest: {:?})", e, src_clone, dest_clone)),
+                let mut attempts = 0;
+                loop {
+                    if reflink_copy::reflink(&src_clone, &dest_clone).is_ok() {
+                        return Ok(());
+                    }
+                    if std::fs::hard_link(&src_clone, &dest_clone).is_ok() {
+                        return Ok(());
+                    }
+                    match std::fs::copy(&src_clone, &dest_clone) {
+                        Ok(_) => return Ok(()),
+                        Err(e) => {
+                            attempts += 1;
+                            if attempts >= 10 {
+                                return Err(anyhow::anyhow!("IO Error: {} (Source: {:?}, Dest: {:?})", e, src_clone, dest_clone));
+                            }
+                            let raw_err = e.raw_os_error();
+                            if raw_err == Some(32) || raw_err == Some(5) {
+                                std::thread::sleep(std::time::Duration::from_millis(15));
+                                if dest_clone.exists() {
+                                    let _ = std::fs::remove_file(&dest_clone);
+                                }
+                            } else {
+                                return Err(anyhow::anyhow!("IO Error: {} (Source: {:?}, Dest: {:?})", e, src_clone, dest_clone));
+                            }
+                        }
+                    }
                 }
             })
             .await?;
 
-            result.with_context(|| format!("Failed to link/copy package file"))
+            result.map_err(|e| anyhow::anyhow!("Failed to link/copy package file: {}", e))
         });
     }
 

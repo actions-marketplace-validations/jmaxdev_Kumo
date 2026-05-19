@@ -34,11 +34,7 @@ async fn main() -> Result<()> {
     let res = inner_main(cli, &store, &security, &resolver).await;
 
     if let Ok(Some(new_version)) = update_check_handle.await {
-        let current_version = env!("CARGO_PKG_VERSION");
-        println!("\n\x1b[33m┌─────────────────────────────────────────────────────────┐\x1b[0m");
-        println!("\x1b[33m│\x1b[0m  New version of Kumo available: \x1b[32mv{}\x1b[0m -> \x1b[32mv{}\x1b[0m       \x1b[33m│\x1b[0m", current_version, new_version);
-        println!("\x1b[33m│\x1b[0m  Run \x1b[36mkumo update\x1b[0m to upgrade!                          \x1b[33m│\x1b[0m");
-        println!("\x1b[33m└─────────────────────────────────────────────────────────┘\x1b[0m\n");
+        common::print_update_banner(&new_version);
     }
 
     res
@@ -150,11 +146,11 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
         for bin_name in &exec_possible_bins {
             let bin_path = global_bin_dir.join(bin_name);
             if bin_path.exists() {
-
                 let _ = filetime::set_file_mtime(&kx_dir, filetime::FileTime::now());
                 return execute_binary(&bin_path, cli.args, &global_bin_dir);
             }
         }
+        let _ = tokio::fs::remove_dir_all(&kx_dir).await;
     }
 
 
@@ -238,61 +234,91 @@ async fn install_and_get_bin_with_lockfile(
     let bin_dir = kx_dir.join(".bin");
     let nm_dir = kx_dir.join("node_modules");
 
-    if !kx_dir.exists() {
-        println!("Installing {} and dependencies...", name);
-        tokio::fs::create_dir_all(&bin_dir).await?;
-        
-        for (pkg_id, pkg) in &lockfile.packages {
-            let pkg_name = if pkg_id.starts_with('@') {
-                let parts: Vec<&str> = pkg_id.split('@').collect();
-                if parts.len() > 1 {
-                    format!("@{}", parts[1])
-                } else {
-                    pkg_id.to_string()
-                }
-            } else {
-                pkg_id.split('@').next().unwrap_or(pkg_id).to_string()
-            };
-            let dest = nm_dir.join(pkg_name.replace('/', std::path::MAIN_SEPARATOR_STR));
-            
-
-            let client = reqwest::Client::new();
-            let response = client.get(&pkg.resolution.tarball).send().await?;
-            let bytes = response.bytes().await?;
-            
-            let file_map = kumo_core::tarball::extract_and_store(store, &bytes).await?;
-            kumo_core::package::link_package(store, &dest, &file_map).await?;
-            
-
-            if let Some(bin) = &pkg.bin {
-                match bin {
-                    serde_json::Value::String(path) => {
-                        let shim_name = if pkg_name.contains('/') {
-                            pkg_name.split('/').last().unwrap_or(&pkg_name)
-                        } else {
-                            &pkg_name
-                        };
-                        create_shim(&bin_dir, shim_name, &dest.join(path)).await?;
-                    }
-                    serde_json::Value::Object(map) => {
-                        for (cmd_name, path) in map {
-                            if let Some(p) = path.as_str() {
-                                create_shim(&bin_dir, &cmd_name, &dest.join(p)).await?;
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-
     let possible_bins = if cfg!(target_os = "windows") {
         vec![format!("{}.cmd", exec_bin_name), format!("{}.exe", exec_bin_name), format!("{}.bat", exec_bin_name), exec_bin_name.to_string()]
     } else {
         vec![exec_bin_name.to_string()]
     };
+
+    let mut bin_exists = false;
+    for bin_name in &possible_bins {
+        if bin_dir.join(bin_name).exists() {
+            bin_exists = true;
+            break;
+        }
+    }
+
+    if !bin_exists {
+        println!("Installing {} and dependencies...", name);
+        let _ = tokio::fs::remove_dir_all(&kx_dir).await;
+        tokio::fs::create_dir_all(&bin_dir).await?;
+        
+        let cpus = num_cpus::get();
+        let concurrent_limit = cpus * 2;
+
+        let packages_to_install: Vec<(String, resolver::LockedPackage)> = lockfile.packages
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        let client = reqwest::Client::new();
+        
+        use futures::StreamExt;
+        let stream = futures::stream::iter(packages_to_install).map(|(pkg_id, pkg)| {
+            let store = store.clone();
+            let nm_dir = nm_dir.clone();
+            let bin_dir = bin_dir.clone();
+            let client = client.clone();
+
+            async move {
+                let pkg_name = if pkg_id.starts_with('@') {
+                    let parts: Vec<&str> = pkg_id.split('@').collect();
+                    if parts.len() > 1 {
+                        format!("@{}", parts[1])
+                    } else {
+                        pkg_id.to_string()
+                    }
+                } else {
+                    pkg_id.split('@').next().unwrap_or(&pkg_id).to_string()
+                };
+                let dest = nm_dir.join(pkg_name.replace('/', std::path::MAIN_SEPARATOR_STR));
+                
+                let response = client.get(&pkg.resolution.tarball).send().await?;
+                let bytes = response.bytes().await?;
+                
+                let file_map = kumo_core::tarball::extract_and_store(&store, &bytes).await?;
+                kumo_core::package::link_package(&store, &dest, &file_map).await?;
+                
+                if let Some(bin) = &pkg.bin {
+                    match bin {
+                        serde_json::Value::String(path) => {
+                            let shim_name = if pkg_name.contains('/') {
+                                pkg_name.split('/').last().unwrap_or(&pkg_name)
+                            } else {
+                                &pkg_name
+                            };
+                            create_shim(&bin_dir, shim_name, &dest.join(path)).await?;
+                        }
+                        serde_json::Value::Object(map) => {
+                            for (cmd_name, path) in map {
+                                if let Some(p) = path.as_str() {
+                                    create_shim(&bin_dir, &cmd_name, &dest.join(p)).await?;
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                
+                Ok::<(), anyhow::Error>(())
+            }
+        }).buffer_unordered(concurrent_limit);
+
+        let mut results = stream;
+        while let Some(res) = results.next().await {
+            res?;
+        }
+    }
 
     for bin_name in possible_bins {
         let bin_path = bin_dir.join(bin_name);
@@ -308,22 +334,5 @@ async fn create_shim(
     name: &str,
     target: &std::path::Path,
 ) -> Result<()> {
-    if cfg!(target_os = "windows") {
-        let shim_path = bin_dir.join(format!("{}.cmd", name));
-        let content = format!("@ECHO OFF\nnode \"{}\" %*", target.display());
-        tokio::fs::write(shim_path, content).await?;
-    } else {
-        let shim_path = bin_dir.join(name);
-        let content = format!("#!/bin/sh\nnode \"{}\" \"$@\"", target.display());
-        tokio::fs::write(&shim_path, content).await?;
-        
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&shim_path)?.permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&shim_path, perms)?;
-        }
-    }
-    Ok(())
+    common::create_shim(bin_dir, name, target).await
 }

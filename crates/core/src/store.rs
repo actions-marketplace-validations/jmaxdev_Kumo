@@ -28,7 +28,24 @@ impl Store {
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent).await?;
             }
-            fs::write(path, content).await?;
+
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let tmp_path = path.with_extension(format!("tmp-{}-{}", std::process::id(), now));
+
+            if let Err(e) = fs::write(&tmp_path, content).await {
+                let _ = fs::remove_file(&tmp_path).await;
+                return Err(e.into());
+            }
+
+            if let Err(e) = fs::rename(&tmp_path, &path).await {
+                let _ = fs::remove_file(&tmp_path).await;
+                if !path.exists() {
+                    return Err(e.into());
+                }
+            }
         }
 
         Ok(hash)

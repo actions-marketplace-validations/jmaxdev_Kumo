@@ -145,3 +145,70 @@ pub async fn check_for_new_version() -> Option<String> {
 
     None
 }
+
+#[allow(dead_code)]
+pub async fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()> {
+    tokio::fs::create_dir_all(&dst).await?;
+    let mut entries = tokio::fs::read_dir(src).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        let ty = entry.file_type().await?;
+        if ty.is_dir() {
+            Box::pin(copy_dir_recursive(
+                &entry.path(),
+                &dst.join(entry.file_name()),
+            ))
+            .await?;
+        } else {
+            tokio::fs::copy(entry.path(), dst.join(entry.file_name())).await?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn create_shim(
+    bin_dir: &std::path::Path,
+    name: &str,
+    target: &std::path::Path,
+) -> Result<()> {
+    let deps_dir = bin_dir.parent().unwrap_or(bin_dir);
+    if cfg!(target_os = "windows") {
+        let shim_path = bin_dir.join(format!("{}.cmd", name));
+        if let Some(parent) = shim_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        let content = format!(
+            "@ECHO OFF\nSET NODE_PATH={}\nnode \"{}\" %*",
+            deps_dir.display(),
+            target.display()
+        );
+        tokio::fs::write(shim_path, content).await?;
+    } else {
+        let shim_path = bin_dir.join(name);
+        if let Some(parent) = shim_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        let content = format!(
+            "#!/bin/sh\nexport NODE_PATH=\"{}\"\nnode \"{}\" \"$@\"",
+            deps_dir.display(),
+            target.display()
+        );
+        tokio::fs::write(&shim_path, content).await?;
+        
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&shim_path)?.permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&shim_path, perms)?;
+        }
+    }
+    Ok(())
+}
+
+pub fn print_update_banner(new_version: &str) {
+    let current_version = env!("CARGO_PKG_VERSION");
+    println!("\n\x1b[33m┌─────────────────────────────────────────────────────────┐\x1b[0m");
+    println!("\x1b[33m│\x1b[0m  New version of Kumo available: \x1b[32mv{}\x1b[0m -> \x1b[32mv{}\x1b[0m       \x1b[33m│\x1b[0m", current_version, new_version);
+    println!("\x1b[33m│\x1b[0m  Run \x1b[36mkumo update\x1b[0m to upgrade!                          \x1b[33m│\x1b[0m");
+    println!("\x1b[33m└─────────────────────────────────────────────────────────┘\x1b[0m\n");
+}
