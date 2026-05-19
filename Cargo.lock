@@ -271,7 +271,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cli"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "blake3",
@@ -294,6 +294,7 @@ dependencies = [
  "serde_yaml",
  "tar",
  "tokio",
+ "winres",
  "zip",
 ]
 
@@ -1062,7 +1063,7 @@ dependencies = [
 
 [[package]]
 name = "kumo-core"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1502,7 +1503,7 @@ dependencies = [
 
 [[package]]
 name = "resolver"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "dirs",
@@ -1621,7 +1622,7 @@ dependencies = [
 
 [[package]]
 name = "security"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2018,6 +2019,15 @@ dependencies = [
  "futures-sink",
  "pin-project-lite",
  "tokio",
+]
+
+[[package]]
+name = "toml"
+version = "0.5.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4f7f0dd8d50a853a531c426359045b1998f04219d88799810762cd4ad314234"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -2578,6 +2588,15 @@ checksum = "524e57b2c537c0f9b1e69f1965311ec12182b4122e45035b1508cd24d2adadb1"
 dependencies = [
  "cfg-if",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "winres"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b68db261ef59e9e52806f688020631e987592bd83619edccda9c47d42cde4f6c"
+dependencies = [
+ "toml",
 ]
 
 [[package]]
