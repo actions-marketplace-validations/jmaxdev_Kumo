@@ -145,12 +145,7 @@ impl Resolver {
         let response: RegistryResponse = if cache_path.exists() {
             let content = std::fs::read_to_string(&cache_path)?;
             let res: RegistryResponse = serde_json::from_str(&content)?;
-            let is_old_cache = res
-                .versions
-                .values()
-                .next()
-                .map_or(true, |v| v.optional_dependencies.is_none());
-            if res.versions.is_empty() || is_old_cache {
+            if res.versions.is_empty() {
                 self.fetch_and_cache_metadata(name, &cache_path).await?
             } else {
                 res

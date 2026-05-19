@@ -15,6 +15,7 @@ pub async fn link_package(
             .context("Failed to create target directory")?;
     }
 
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(64));
     let mut tasks = futures_util::stream::FuturesUnordered::new();
 
     for (rel_path, hash) in file_map {
@@ -22,8 +23,10 @@ pub async fn link_package(
         let target_dir = target_dir.to_path_buf();
         let rel_path = rel_path.clone();
         let hash = hash.clone();
+        let sem = semaphore.clone();
 
         tasks.push(async move {
+            let _permit = sem.acquire().await.unwrap();
             let normalized_rel_path = rel_path.replace('/', std::path::MAIN_SEPARATOR_STR);
             let dest = target_dir.join(normalized_rel_path);
             let src = store.get_path(&hash);
@@ -44,12 +47,18 @@ pub async fn link_package(
             let result = tokio::task::spawn_blocking(move || {
                 let mut attempts = 0;
                 loop {
-                    if reflink_copy::reflink(&src_clone, &dest_clone).is_ok() {
-                        return Ok(());
+                    // On non-Windows, try reflink (CoW) first
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        if reflink_copy::reflink(&src_clone, &dest_clone).is_ok() {
+                            return Ok(());
+                        }
                     }
+                    // Try hardlink
                     if std::fs::hard_link(&src_clone, &dest_clone).is_ok() {
                         return Ok(());
                     }
+                    // Fallback to copy
                     match std::fs::copy(&src_clone, &dest_clone) {
                         Ok(_) => return Ok(()),
                         Err(e) => {
