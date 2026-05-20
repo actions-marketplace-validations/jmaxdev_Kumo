@@ -3,6 +3,8 @@ name: Issues & pr
 on:
   issues:
     types: [opened]
+  pull_request:
+    types: [opened]
   workflow_dispatch:
 
 jobs:
