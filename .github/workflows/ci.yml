@@ -7,6 +7,16 @@ on:
     branches: ["dev"]
 
 jobs:
+  message:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Run Auto-Answer
+        uses: jmaxdev/automatic-answer@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          personal_token: ${{ secrets.PERSONAL_ACCESS_TOKEN || '' }}
+          use_personal_token: ${{ secrets.PERSONAL_ACCESS_TOKEN != '' }}
+
   ci:
     runs-on: ubuntu-22.04
     steps:
