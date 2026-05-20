@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Run Auto-Answer
-        uses: jmaxdev/automatic-answer@v1.0.0
+        uses: jmaxdev/automatic-answer@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           personal_token: ${{ secrets.PERSONAL_ACCESS_TOKEN || '' }}
