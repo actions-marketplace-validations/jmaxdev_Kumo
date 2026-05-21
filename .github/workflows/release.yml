@@ -44,6 +44,8 @@ jobs:
           elif [ "$VERSION_TYPE" = "rc" ]; then
             BUMP_TYPE="rc"
           fi
+
+          ls -la
           
           node ../scripts/bump.js "$BUMP_TYPE"
   
