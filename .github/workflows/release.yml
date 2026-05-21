@@ -55,7 +55,7 @@ jobs:
       matrix:
         os: [
           windows-2022, 
-          ubuntu-latest, 
+          ubuntu-22.04, 
           macos-14
         ]
         include:
@@ -124,9 +124,9 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            windows-latest-build/kumo-windows.zip
-            ubuntu-latest-build/kumo-linux.tar.gz
-            macos-latest-build/kumo-macos.tar.gz
+            windows-2022-build/kumo-windows.zip
+            ubuntu-22.04-build/kumo-linux.tar.gz
+            macos-14-build/kumo-macos.tar.gz
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
         env:
