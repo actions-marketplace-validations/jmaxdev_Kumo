@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
 async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &security::SecurityEngine, resolver: &Resolver) -> Result<()> {
     let binary_arg = cli.binary.clone().unwrap();
 
-    let (mut binary, target_version) = if binary_arg == "create" {
+    let (binary, target_version) = if binary_arg == "create" {
         if cli.args.is_empty() {
             anyhow::bail!("'create' requires a package name. Example: kx create vite");
         }

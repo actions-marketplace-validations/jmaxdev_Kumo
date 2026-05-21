@@ -18,11 +18,29 @@ on:
         default: 'stable'
 
 jobs:
+  test:
+    runs-on: ubuntu-22.04
+    name: Run Cargo Check before building
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check Kumo
+        run: cargo check
   update-version:
     name: Update Version
     runs-on: ubuntu-22.04
+    needs: test
     permissions:
       contents: write
+    outputs:
+      new_tag: ${{ steps.get-version.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -46,6 +64,12 @@ jobs:
           fi
           
           node scripts/bump.js "$BUMP_TYPE"
+
+      - name: Get new version
+        id: get-version
+        run: |
+          NEW_VERSION=$(grep -m 1 '^version = ' crates/cli/Cargo.toml | cut -d '"' -f 2)
+          echo "version=v$NEW_VERSION" >> $GITHUB_OUTPUT
   
   build:
     name: Build for ${{ matrix.os }}
@@ -111,9 +135,8 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: build
+    needs: [build, update-version, test]
     runs-on: ubuntu-22.04
-    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     steps:
@@ -123,11 +146,12 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ needs.update-version.outputs.new_tag }}
           files: |
             windows-2022-build/kumo-windows.zip
             ubuntu-22.04-build/kumo-linux.tar.gz
             macos-14-build/kumo-macos.tar.gz
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(needs.update-version.outputs.new_tag, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
