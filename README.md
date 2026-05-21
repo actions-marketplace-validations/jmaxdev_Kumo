@@ -13,6 +13,7 @@
   <a href="#-security-policies"><img src="https://img.shields.io/badge/Security-First-brightgreen?style=for-the-badge&logo=shield" alt="Security: Proactive"></a>
   <a href="docs/caching.md"><img src="https://img.shields.io/badge/Caching-BLAKE3-blue?style=for-the-badge" alt="Caching: BLAKE3"></a>
   <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-UPL_1.0-blueviolet?style=for-the-badge" alt="License: UPL 1.0"></a>
+  [![Release](https://github.com/jmaxdev/Kumo/actions/workflows/release.yml/badge.svg)](https://github.com/jmaxdev/Kumo/actions/workflows/release.yml)
 </p>
 
 ---
