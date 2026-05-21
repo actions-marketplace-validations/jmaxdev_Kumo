@@ -50,6 +50,7 @@ jobs:
   build:
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    needs: update-version
     strategy:
       matrix:
         os: [
