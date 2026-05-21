@@ -140,13 +140,13 @@ pub async fn execute(
             .cloned()
             .unwrap_or_else(|| range.clone());
 
-        // Resolve the new version: either absolute latest or within semver range
-        let new_version = if latest {
-            match resolver.get_latest_version(name).await {
-                Ok(v) => v,
+        // Resolve the package metadata for the target upgrade version
+        let meta = if latest {
+            match resolver.resolve_package_fresh(name, "latest").await {
+                Ok(m) => m,
                 Err(e) => {
                     if log {
-                        eprintln!("  Warning: Could not resolve {}: {}", name, e);
+                        eprintln!("  Warning: Could not resolve latest version for {}: {}", name, e);
                     }
                     pb.inc(1);
                     continue;
@@ -154,7 +154,7 @@ pub async fn execute(
             }
         } else {
             match resolver.resolve_package_fresh(name, range).await {
-                Ok(meta) => meta.version.to_string(),
+                Ok(m) => m,
                 Err(e) => {
                     if log {
                         eprintln!("  Warning: Could not resolve {}: {}", name, e);
@@ -164,6 +164,39 @@ pub async fn execute(
                 }
             }
         };
+        let new_version = meta.version.to_string();
+
+        let has_scripts = meta.scripts.as_ref().map_or(false, |s| {
+            s.contains_key("preinstall")
+                || s.contains_key("install")
+                || s.contains_key("postinstall")
+        });
+
+        match security
+            .validate_package(
+                name,
+                &new_version,
+                meta.license.as_deref(),
+                meta.deprecated.is_some(),
+                meta.published_at.as_deref(),
+                has_scripts,
+            )
+            .await
+        {
+            Ok(true) => {}
+            Ok(false) => {
+                eprintln!("\n🚨 \x1b[31mSecurity Warning:\x1b[0m Upgrade candidate {}@{} violates security policy! Skipping this upgrade.", name, new_version);
+                pb.inc(1);
+                continue;
+            }
+            Err(e) => {
+                if log {
+                    eprintln!("  Warning: Could not validate security for {}@{}: {}", name, new_version, e);
+                }
+                pb.inc(1);
+                continue;
+            }
+        }
 
         let change_type = classify_change(&current_version, &new_version);
 
