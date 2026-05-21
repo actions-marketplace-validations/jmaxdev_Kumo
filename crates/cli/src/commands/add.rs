@@ -14,13 +14,30 @@ pub async fn execute(
     log: bool,
     config_path: Option<std::path::PathBuf>,
 ) -> Result<()> {
+    let (pkg_name, version_req) = crate::common::parse_package_arg(&name);
+
     if global {
-        crate::commands::install::install_global(store, resolver, security, name).await?;
+        crate::commands::install::install_global(store, resolver, security, pkg_name, version_req).await?;
     } else {
         let config_path = config_path.ok_or_else(|| {
             anyhow::anyhow!("Neither kumo.json nor package.json found in current directory")
         })?;
-        println!("Adding {} to configuration...", name);
+        
+        println!("Resolving package {}@{}...", pkg_name, version_req);
+        let meta = resolver.resolve_package_fresh(&pkg_name, &version_req).await?;
+        let resolved_version = meta.version.to_string();
+
+        let version_to_save = if version_req == "latest" || version_req == "stable" || version_req == "*" || version_req.is_empty() {
+            format!("^{}", resolved_version)
+        } else {
+            if version_req.chars().next().unwrap_or(' ').is_numeric() {
+                format!("^{}", version_req)
+            } else {
+                version_req.clone()
+            }
+        };
+
+        println!("Adding {}@{} to configuration...", pkg_name, version_to_save);
         let mut config_content: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&config_path)?)?;
         let section = if dev {
@@ -33,19 +50,20 @@ pub async fn execute(
                 .or_insert(serde_json::json!({}))
                 .as_object_mut()
                 .unwrap()
-                .insert(name.clone(), serde_json::json!("latest"));
+                .insert(pkg_name.clone(), serde_json::json!(version_to_save));
         }
 
         let json = serde_json::to_string_pretty(&config_content)?;
         std::fs::write(&config_path, json)?;
         println!(
-            "Updated {} with {}",
+            "Updated {} with {}@{}",
             config_path.file_name().unwrap().to_string_lossy(),
-            name
+            pkg_name,
+            version_to_save
         );
 
         let mut deps = HashMap::new();
-        deps.insert(name.clone(), "latest".to_string());
+        deps.insert(pkg_name.clone(), version_to_save);
         crate::commands::install::resolve_and_install(
             store,
             resolver,

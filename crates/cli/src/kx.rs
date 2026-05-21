@@ -52,26 +52,30 @@ async fn main() -> Result<()> {
 }
 
 async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &security::SecurityEngine, resolver: &Resolver) -> Result<()> {
-    let mut binary = cli.binary.clone().unwrap();
+    let binary_arg = cli.binary.clone().unwrap();
 
-    if binary == "create" {
+    let (mut binary, target_version) = if binary_arg == "create" {
         if cli.args.is_empty() {
             anyhow::bail!("'create' requires a package name. Example: kx create vite");
         }
         let target = cli.args.remove(0);
+        let (pkg_part, ver_part) = common::parse_package_arg(&target);
         
-        if target.starts_with('@') {
-            if let Some(slash_idx) = target.find('/') {
-                let (scope, name) = target.split_at(slash_idx);
+        let binary_name = if pkg_part.starts_with('@') {
+            if let Some(slash_idx) = pkg_part.find('/') {
+                let (scope, name) = pkg_part.split_at(slash_idx);
                 let name = &name[1..];
-                binary = format!("{}/create-{}", scope, name);
+                format!("{}/create-{}", scope, name)
             } else {
-                binary = format!("{}/create", target);
+                format!("{}/create", pkg_part)
             }
         } else {
-            binary = format!("create-{}", target);
-        }
-    }
+            format!("create-{}", pkg_part)
+        };
+        (binary_name, ver_part)
+    } else {
+        common::parse_package_arg(&binary_arg)
+    };
 
 
     let deps_dir_name = common::get_deps_dir();
@@ -106,11 +110,23 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
 
 
     let mut root_deps = HashMap::new();
-    root_deps.insert(binary.clone(), "latest".to_string());
+    root_deps.insert(binary.clone(), target_version.clone());
     let lockfile = resolver.resolve_tree(&root_deps).await?;
     
     let main_pkg_id = lockfile.packages.keys()
-        .find(|k| k.starts_with(&binary))
+        .find(|k| {
+            let parts: Vec<&str> = k.split('@').collect();
+            let k_name = if k.starts_with('@') {
+                if parts.len() > 1 {
+                    format!("@{}", parts[1])
+                } else {
+                    (*k).clone()
+                }
+            } else {
+                parts[0].to_string()
+            };
+            k_name == binary
+        })
         .ok_or_else(|| anyhow!("Could not find package {} in resolution", binary))?;
     let version = main_pkg_id.split('@').last().unwrap_or("latest");
 

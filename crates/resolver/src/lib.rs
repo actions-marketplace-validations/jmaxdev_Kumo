@@ -185,7 +185,13 @@ impl Resolver {
             self.fetch_and_cache_metadata(name, &cache_path).await?
         };
 
-        let version_str = if range == "latest" || range == "*" || range == "" {
+        let version_str = if response.dist_tags.contains_key(range) {
+            response
+                .dist_tags
+                .get(range)
+                .unwrap()
+                .to_string()
+        } else if range == "latest" || range == "*" || range == "" {
             response
                 .dist_tags
                 .get("latest")

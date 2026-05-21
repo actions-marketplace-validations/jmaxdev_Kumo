@@ -212,3 +212,24 @@ pub fn print_update_banner(new_version: &str) {
     println!("\x1b[33m│\x1b[0m  Run \x1b[36mkumo update\x1b[0m to upgrade!                          \x1b[33m│\x1b[0m");
     println!("\x1b[33m└─────────────────────────────────────────────────────────┘\x1b[0m\n");
 }
+
+pub fn parse_package_arg(arg: &str) -> (String, String) {
+    if arg.starts_with('@') {
+        if let Some(second_at_idx) = arg[1..].find('@') {
+            let split_idx = second_at_idx + 1;
+            let name = arg[..split_idx].to_string();
+            let version = arg[split_idx + 1..].to_string();
+            (name, version)
+        } else {
+            (arg.to_string(), "latest".to_string())
+        }
+    } else {
+        if let Some(at_idx) = arg.find('@') {
+            let name = arg[..at_idx].to_string();
+            let version = arg[at_idx + 1..].to_string();
+            (name, version)
+        } else {
+            (arg.to_string(), "latest".to_string())
+        }
+    }
+}

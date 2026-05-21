@@ -414,16 +414,17 @@ pub async fn install_global(
     store: &Store,
     resolver: &Resolver,
     _security: &SecurityEngine,
-    name: String,
+    pkg_name: String,
+    version_req: String,
 ) -> Result<()> {
-    println!("Installing global package: {}...", name);
+    println!("Installing global package: {}@{}...", pkg_name, version_req);
     let metadata = resolver
         .clone()
-        .resolve_package(name.clone(), "latest".to_string())
+        .resolve_package(pkg_name.clone(), version_req)
         .await?;
 
     let mut deps = HashMap::new();
-    deps.insert(name.clone(), metadata.version.to_string());
+    deps.insert(pkg_name.clone(), metadata.version.to_string());
     let lockfile = resolver.resolve_tree(&deps).await?;
 
     let global_root = dirs::home_dir().unwrap().join(".kumo").join("global");
@@ -446,12 +447,12 @@ pub async fn install_global(
     if let Some(bin) = metadata.bin {
         match bin {
             serde_json::Value::String(path) => {
-                create_shim(&global_bin, &name, &global_deps_dir.join(&name).join(path)).await?;
+                create_shim(&global_bin, &pkg_name, &global_deps_dir.join(&pkg_name).join(path)).await?;
             }
             serde_json::Value::Object(map) => {
                 for (cmd_name, path) in map {
                     if let Some(p) = path.as_str() {
-                        create_shim(&global_bin, &cmd_name, &global_deps_dir.join(&name).join(p))
+                        create_shim(&global_bin, &cmd_name, &global_deps_dir.join(&pkg_name).join(p))
                             .await?;
                     }
                 }
@@ -460,7 +461,7 @@ pub async fn install_global(
         }
     }
 
-    println!("Global package {}@{} installed!", name, metadata.version);
+    println!("Global package {}@{} installed!", pkg_name, metadata.version);
     println!("Binaries linked in: {:?}", global_bin);
     println!("Add this directory to your PATH to use them.");
     Ok(())
