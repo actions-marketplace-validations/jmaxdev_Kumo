@@ -9,7 +9,7 @@ pub async fn execute(security: &SecurityEngine) -> Result<()> {
         anyhow::bail!("kumo.lock not found. Please run 'kumo install' first.");
     }
 
-    let lockfile: Lockfile = serde_yaml::from_str(&std::fs::read_to_string(lock_path)?)?;
+    let lockfile: Lockfile = serde_yml::from_str(&std::fs::read_to_string(lock_path)?)?;
     let mut total_vulns = 0;
 
     let pb = indicatif::ProgressBar::new(lockfile.packages.len() as u64);
@@ -22,11 +22,10 @@ pub async fn execute(security: &SecurityEngine) -> Result<()> {
     );
 
     for (key, _pkg) in &lockfile.packages {
-        let name = key.split('@').next().unwrap_or(key);
-        let version = key.split('@').nth(1).unwrap_or("unknown");
+        let (name, version) = crate::common::parse_package_id(key);
 
         pb.set_message(format!("{}@{}", name, version));
-        let vulns = security.check_vulnerabilities(name, version).await?;
+        let vulns = security.check_vulnerabilities(&name, &version).await?;
 
         if !vulns.is_empty() {
             pb.suspend(|| {

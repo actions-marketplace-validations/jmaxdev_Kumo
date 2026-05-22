@@ -133,11 +133,22 @@ jobs:
         cp target/release/kx bin/
         tar -czf ${{ matrix.artifact_name }} -C bin .
 
+    - name: Generate Checksums
+      run: |
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          certutil -hashfile ${{ matrix.artifact_name }} SHA256 > ${{ matrix.artifact_name }}.sha256
+        else
+          sha256sum ${{ matrix.artifact_name }} > ${{ matrix.artifact_name }}.sha256
+        fi
+      shell: bash
+
     - name: Upload Artifact
       uses: actions/upload-artifact@v7
       with:
         name: ${{ matrix.os }}-build
-        path: ${{ matrix.artifact_name }}
+        path: |
+          ${{ matrix.artifact_name }}
+          ${{ matrix.artifact_name }}.sha256
 
   release:
     name: Create GitHub Release
@@ -155,8 +166,11 @@ jobs:
           tag_name: ${{ needs.update-version.outputs.new_tag }}
           files: |
             windows-2022-build/kumo-windows.zip
+            windows-2022-build/kumo-windows.zip.sha256
             ubuntu-22.04-build/kumo-linux.tar.gz
+            ubuntu-22.04-build/kumo-linux.tar.gz.sha256
             macos-14-build/kumo-macos.tar.gz
+            macos-14-build/kumo-macos.tar.gz.sha256
           generate_release_notes: true
           prerelease: ${{ contains(needs.update-version.outputs.new_tag, '-') }}
         env:

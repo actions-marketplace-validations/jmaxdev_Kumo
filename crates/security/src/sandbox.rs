@@ -149,6 +149,7 @@ impl SandboxRunner {
         cmd
     }
 
+
     #[allow(dead_code)]
     fn create_fallback(pkg_dir: &Path, script: &str, allow_network: bool) -> Command {
         let mut cmd = if cfg!(windows) {

@@ -7,7 +7,7 @@ pub async fn execute(name: String) -> Result<()> {
     if !lock_path.exists() {
         anyhow::bail!("kumo.lock not found.");
     }
-    let lockfile: Lockfile = serde_yaml::from_str(&std::fs::read_to_string(lock_path)?)?;
+    let lockfile: Lockfile = serde_yml::from_str(&std::fs::read_to_string(lock_path)?)?;
 
     let mut pkg_key = None;
     for key in lockfile.packages.keys() {

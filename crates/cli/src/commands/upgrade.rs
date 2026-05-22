@@ -130,7 +130,7 @@ pub async fn execute(
     let lock_path = std::env::current_dir()?.join("kumo.lock");
     let locked_versions: HashMap<String, String> = if lock_path.exists() {
         let lockfile: resolver::Lockfile =
-            serde_yaml::from_str(&std::fs::read_to_string(&lock_path)?)?;
+            serde_yml::from_str(&std::fs::read_to_string(&lock_path)?)?;
         lockfile.dependencies
     } else {
         HashMap::new()
@@ -400,9 +400,9 @@ pub async fn execute(
     // Delete the lockfile config_hash to force a full re-resolution
     if lock_path.exists() {
         let lock_content = std::fs::read_to_string(&lock_path)?;
-        if let Ok(mut lockfile) = serde_yaml::from_str::<resolver::Lockfile>(&lock_content) {
+        if let Ok(mut lockfile) = serde_yml::from_str::<resolver::Lockfile>(&lock_content) {
             lockfile.config_hash = None;
-            let yaml = serde_yaml::to_string(&lockfile)?;
+            let yaml = serde_yml::to_string(&lockfile)?;
             std::fs::write(&lock_path, yaml)?;
         }
     }

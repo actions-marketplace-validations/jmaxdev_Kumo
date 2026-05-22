@@ -15,7 +15,7 @@ pub async fn execute(subcommand: ConfigSubcommand) -> Result<()> {
             println!("Created kumo.config.json with default security policies.");
         }
         ConfigSubcommand::Default { setting, value } => {
-            let global_config = dirs::home_dir().unwrap().join(".kumo").join("kumo.config.json");
+            let global_config = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?.join(".kumo").join("kumo.config.json");
             let mut config_json = if global_config.exists() {
                 serde_json::from_str(&std::fs::read_to_string(&global_config)?).unwrap_or_else(|_| serde_json::to_value(security::Policy::default()).unwrap())
             } else {

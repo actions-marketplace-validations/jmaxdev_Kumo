@@ -167,8 +167,7 @@ pub async fn execute(name: &str, args: Vec<String>) -> Result<()> {
                 let deps_dir = project_dir.join(crate::common::get_deps_dir());
                 let bin_dir = deps_dir.join(".bin");
                 if bin_dir.exists() {
-                    let path = std::env::var("PATH").unwrap_or_default();
-                    let new_path = format!("{};{}", bin_dir.display(), path);
+                    let new_path = crate::common::prepend_to_path(&bin_dir);
                     cmd.env("PATH", new_path);
                 }
 
@@ -269,8 +268,7 @@ pub async fn execute(name: &str, args: Vec<String>) -> Result<()> {
         }
 
         let bin_dir = deps_dir.join(".bin");
-        let path = std::env::var("PATH").unwrap_or_default();
-        let new_path = format!("{};{}", bin_dir.display(), path);
+        let new_path = crate::common::prepend_to_path(&bin_dir);
         cmd.env("PATH", new_path);
 
         let status = cmd.status()?;

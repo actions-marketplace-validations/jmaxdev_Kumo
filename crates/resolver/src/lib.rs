@@ -1,104 +1,10 @@
 use anyhow::{anyhow, Context, Result};
 use semver::{Version, VersionReq};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PackageMetadata {
-    pub name: String,
-    pub version: Version,
-    pub dependencies: Option<HashMap<String, String>>,
-    pub dist: TarballInfo,
-    pub license: Option<String>,
-    pub deprecated: Option<String>,
-    pub published_at: Option<String>,
-    pub bin: Option<serde_json::Value>,
-    pub scripts: Option<HashMap<String, String>>,
-    pub optional_dependencies: Option<HashMap<String, String>>,
-    pub os: Option<Vec<String>>,
-    pub cpu: Option<Vec<String>>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct RegistrySignature {
-    pub keyid: String,
-    pub sig: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct RegistryAttestations {
-    pub url: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct TarballInfo {
-    pub tarball: String,
-    pub shasum: String,
-    #[serde(default)]
-    pub size: u64,
-    #[serde(rename = "unpackedSize", default)]
-    pub unpacked_size: u64,
-    #[serde(default)]
-    pub signatures: Option<Vec<RegistrySignature>>,
-    #[serde(rename = "npm-signature", default)]
-    pub npm_signature: Option<String>,
-    #[serde(default)]
-    pub attestations: Option<RegistryAttestations>,
-}
-
-impl TarballInfo {
-    pub fn get_size(&self) -> u64 {
-        if self.unpacked_size > 0 {
-            self.unpacked_size
-        } else {
-            self.size
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RegistryResponse {
-    name: String,
-    versions: HashMap<String, RegistryVersion>,
-    #[serde(rename = "dist-tags")]
-    dist_tags: HashMap<String, String>,
-    time: Option<HashMap<String, String>>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RegistryVersion {
-    name: String,
-    version: String,
-    dependencies: Option<HashMap<String, String>>,
-    dist: TarballInfo,
-    license: Option<serde_json::Value>,
-    deprecated: Option<serde_json::Value>,
-    scripts: Option<HashMap<String, String>>,
-    bin: Option<serde_json::Value>,
-    #[serde(rename = "optionalDependencies")]
-    pub optional_dependencies: Option<HashMap<String, String>>,
-    pub os: Option<Vec<String>>,
-    pub cpu: Option<Vec<String>>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Lockfile {
-    pub lockfile_version: String,
-    pub config_hash: Option<String>,
-    pub dependencies: HashMap<String, String>,
-    pub packages: HashMap<String, LockedPackage>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct LockedPackage {
-    pub resolution: TarballInfo,
-    pub dependencies: Option<HashMap<String, String>>,
-    pub bin: Option<serde_json::Value>,
-    pub scripts: Option<HashMap<String, String>>,
-    pub optional_dependencies: Option<HashMap<String, String>>,
-    #[serde(default)]
-    pub published_at: Option<String>,
-}
+mod types;
+pub use types::*;
+mod cache;
 
 #[derive(Clone)]
 pub struct Resolver {
@@ -110,7 +16,6 @@ impl Resolver {
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
             .use_rustls_tls()
-            .http2_prior_knowledge()
             .pool_max_idle_per_host(20)
             .pool_idle_timeout(std::time::Duration::from_secs(90))
             .tcp_nodelay(true)
@@ -134,12 +39,7 @@ impl Resolver {
 
     /// Resolves a package by invalidating the metadata cache first (fresh fetch).
     pub async fn resolve_package_fresh(&self, name: &str, range: &str) -> Result<PackageMetadata> {
-        let cache_dir = dirs::home_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join(".kumo")
-            .join("cache")
-            .join("metadata");
-        let cache_path = cache_dir.join(format!("{}.json", name.replace('/', "__")));
+        let cache_path = cache::get_metadata_cache_path(name);
         let _ = std::fs::remove_file(&cache_path);
 
         self.resolve_package_internal(name, range).await
@@ -147,12 +47,7 @@ impl Resolver {
 
     /// Gets the absolute latest version of a package from the registry (dist-tags.latest).
     pub async fn get_latest_version(&self, name: &str) -> Result<String> {
-        let cache_dir = dirs::home_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join(".kumo")
-            .join("cache")
-            .join("metadata");
-        let cache_path = cache_dir.join(format!("{}.json", name.replace('/', "__")));
+        let cache_path = cache::get_metadata_cache_path(name);
         let _ = std::fs::remove_file(&cache_path);
 
         let response = self.fetch_and_cache_metadata(name, &cache_path).await?;
@@ -165,12 +60,7 @@ impl Resolver {
 
     /// Gets all available versions of a package from the registry metadata cache or registry.
     pub async fn get_available_versions(&self, name: &str) -> Result<Vec<Version>> {
-        let cache_dir = dirs::home_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join(".kumo")
-            .join("cache")
-            .join("metadata");
-        let cache_path = cache_dir.join(format!("{}.json", name.replace('/', "__")));
+        let cache_path = cache::get_metadata_cache_path(name);
 
         let response: RegistryResponse = if cache_path.exists() {
             let content = std::fs::read_to_string(&cache_path)?;
@@ -197,14 +87,7 @@ impl Resolver {
     }
 
     async fn resolve_package_internal(&self, name: &str, range: &str) -> Result<PackageMetadata> {
-        let cache_dir = dirs::home_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join(".kumo")
-            .join("cache")
-            .join("metadata");
-
-        let _ = std::fs::create_dir_all(&cache_dir);
-        let cache_path = cache_dir.join(format!("{}.json", name.replace('/', "__")));
+        let cache_path = cache::get_metadata_cache_path(name);
 
         let mut from_cache = false;
         let mut response: RegistryResponse = if cache_path.exists() {

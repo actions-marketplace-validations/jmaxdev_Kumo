@@ -10,7 +10,7 @@ pub async fn execute() -> Result<()> {
         println!(" - Created: {:?}", created);
         println!(" - Last Update: {:?}", modified);
         if let Ok(lockfile_str) = std::fs::read_to_string(&lock_path) {
-            if let Ok(lockfile) = serde_yaml::from_str::<Lockfile>(&lockfile_str) {
+            if let Ok(lockfile) = serde_yml::from_str::<Lockfile>(&lockfile_str) {
                 println!(" - Dependencies: {}", lockfile.packages.len());
             }
         }

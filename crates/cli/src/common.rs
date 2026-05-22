@@ -213,6 +213,33 @@ pub fn print_update_banner(new_version: &str) {
     println!("\x1b[33m└─────────────────────────────────────────────────────────┘\x1b[0m\n");
 }
 
+/// Parses a lockfile package key like `@scope/name@1.2.3` or `express@4.18.0`
+/// into a `(name, version)` tuple. Handles scoped packages correctly.
+pub fn parse_package_id(key: &str) -> (String, String) {
+    if key.starts_with('@') {
+        // Scoped package: @scope/name@version
+        // Find the '@' that separates name from version (skip the leading '@')
+        if let Some(version_at) = key[1..].find('@') {
+            let split_idx = version_at + 1;
+            let name = key[..split_idx].to_string();
+            let version = key[split_idx + 1..].to_string();
+            (name, version)
+        } else {
+            // No version suffix, e.g. just "@scope/name"
+            (key.to_string(), "unknown".to_string())
+        }
+    } else {
+        // Unscoped package: name@version
+        if let Some(at_idx) = key.find('@') {
+            let name = key[..at_idx].to_string();
+            let version = key[at_idx + 1..].to_string();
+            (name, version)
+        } else {
+            (key.to_string(), "unknown".to_string())
+        }
+    }
+}
+
 pub fn parse_package_arg(arg: &str) -> (String, String) {
     if arg.starts_with('@') {
         if let Some(second_at_idx) = arg[1..].find('@') {
@@ -231,5 +258,37 @@ pub fn parse_package_arg(arg: &str) -> (String, String) {
         } else {
             (arg.to_string(), "latest".to_string())
         }
+    }
+}
+
+/// Cross-platform helper to prepend a directory to the PATH env var.
+#[allow(dead_code)]
+pub fn prepend_to_path(dir: &std::path::Path) -> String {
+    let old_path = std::env::var("PATH").unwrap_or_default();
+    let mut paths = vec![dir.to_path_buf()];
+    paths.extend(std::env::split_paths(&old_path));
+    std::env::join_paths(paths)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| format!("{}{}{}", dir.display(), if cfg!(windows) { ";" } else { ":" }, old_path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_package_id() {
+        assert_eq!(parse_package_id("express@4.18.2"), ("express".to_string(), "4.18.2".to_string()));
+        assert_eq!(parse_package_id("@types/node@14.14.31"), ("@types/node".to_string(), "14.14.31".to_string()));
+        assert_eq!(parse_package_id("lodash"), ("lodash".to_string(), "unknown".to_string()));
+        assert_eq!(parse_package_id("@nestjs/core"), ("@nestjs/core".to_string(), "unknown".to_string()));
+    }
+
+    #[test]
+    fn test_parse_package_arg() {
+        assert_eq!(parse_package_arg("express@4.18.2"), ("express".to_string(), "4.18.2".to_string()));
+        assert_eq!(parse_package_arg("@types/node@14.14.31"), ("@types/node".to_string(), "14.14.31".to_string()));
+        assert_eq!(parse_package_arg("lodash"), ("lodash".to_string(), "latest".to_string()));
+        assert_eq!(parse_package_arg("@nestjs/core"), ("@nestjs/core".to_string(), "latest".to_string()));
     }
 }

@@ -115,20 +115,11 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
     
     let main_pkg_id = lockfile.packages.keys()
         .find(|k| {
-            let parts: Vec<&str> = k.split('@').collect();
-            let k_name = if k.starts_with('@') {
-                if parts.len() > 1 {
-                    format!("@{}", parts[1])
-                } else {
-                    (*k).clone()
-                }
-            } else {
-                parts[0].to_string()
-            };
+            let (k_name, _) = common::parse_package_id(k);
             k_name == binary
         })
         .ok_or_else(|| anyhow!("Could not find package {} in resolution", binary))?;
-    let version = main_pkg_id.split('@').last().unwrap_or("latest");
+    let (_, version) = common::parse_package_id(main_pkg_id);
 
     let mut exec_bin_name = binary.clone();
     if let Some(pkg) = lockfile.packages.get(main_pkg_id) {
@@ -161,7 +152,7 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
         }
     }
 
-    let kx_dir = dirs::home_dir().unwrap().join(".kumo").join("kx").join(format!("{}@{}", binary, version));
+    let kx_dir = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?.join(".kumo").join("kx").join(format!("{}@{}", binary, version));
     let global_bin_dir = kx_dir.join(".bin");
     
     let exec_possible_bins = if cfg!(target_os = "windows") {
@@ -292,31 +283,20 @@ async fn install_and_get_bin_with_lockfile(
             .packages
             .keys()
             .fold(HashMap::new(), |mut acc, key| {
-                let name = if key.starts_with('@') {
-                    let parts: Vec<&str> = key.split('@').collect();
-                    if parts.len() > 1 {
-                        format!("@{}", parts[1])
-                    } else {
-                        key.to_string()
-                    }
-                } else {
-                    key.split('@').next().unwrap_or(key).to_string()
-                };
-
-                let version = key.split('@').last().unwrap_or("");
+                let (name, version) = common::parse_package_id(key);
                 
                 let is_better = if let Some(existing_key) = acc.get(&name) {
-                    let existing_version = existing_key.split('@').last().unwrap_or("");
+                    let (_, existing_version) = common::parse_package_id(existing_key);
                     
                     let mut this_matches = false;
                     let mut existing_matches = false;
                     if let Some(deps) = exec_deps {
                         if let Some(range) = deps.get(&name) {
                             if let Ok(req) = semver::VersionReq::parse(range) {
-                                if let Ok(v) = semver::Version::parse(version) {
+                                if let Ok(v) = semver::Version::parse(&version) {
                                     this_matches = req.matches(&v);
                                 }
-                                if let Ok(ev) = semver::Version::parse(existing_version) {
+                                if let Ok(ev) = semver::Version::parse(&existing_version) {
                                     existing_matches = req.matches(&ev);
                                 }
                             }
@@ -328,7 +308,7 @@ async fn install_and_get_bin_with_lockfile(
                     } else if !this_matches && existing_matches {
                         false
                     } else {
-                        if let (Ok(v1), Ok(v2)) = (semver::Version::parse(version), semver::Version::parse(existing_version)) {
+                        if let (Ok(v1), Ok(v2)) = (semver::Version::parse(&version), semver::Version::parse(&existing_version)) {
                             v1 > v2
                         } else {
                             version > existing_version
@@ -359,16 +339,7 @@ async fn install_and_get_bin_with_lockfile(
             let client = client.clone();
 
             async move {
-                let pkg_name = if pkg_id.starts_with('@') {
-                    let parts: Vec<&str> = pkg_id.split('@').collect();
-                    if parts.len() > 1 {
-                        format!("@{}", parts[1])
-                    } else {
-                        pkg_id.to_string()
-                    }
-                } else {
-                    pkg_id.split('@').next().unwrap_or(&pkg_id).to_string()
-                };
+                let (pkg_name, _) = common::parse_package_id(&pkg_id);
                 let dest = nm_dir.join(pkg_name.replace('/', std::path::MAIN_SEPARATOR_STR));
                 
                 let response = client.get(&pkg.resolution.tarball).send().await?;

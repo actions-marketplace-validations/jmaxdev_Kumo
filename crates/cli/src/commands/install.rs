@@ -77,7 +77,7 @@ pub async fn resolve_and_install(
     let lock_path = std::env::current_dir()?.join("kumo.lock");
     let lockfile_exists = lock_path.exists();
     let lockfile: Option<Lockfile> = if lockfile_exists {
-        serde_yaml::from_str(&std::fs::read_to_string(&lock_path)?).ok()
+        serde_yml::from_str(&std::fs::read_to_string(&lock_path)?).ok()
     } else {
         None
     };
@@ -94,7 +94,7 @@ pub async fn resolve_and_install(
             validate_lockfile_trust(security, &lockfile_old_copy, &lf)?;
             validate_typosquatting(security, &lockfile_old_copy, &deps, &lf)?;
             lf.config_hash = Some(config_hash);
-            let yaml = serde_yaml::to_string(&lf)?;
+            let yaml = serde_yml::to_string(&lf)?;
             std::fs::write(&lock_path, yaml)?;
             lf
         }
@@ -104,7 +104,7 @@ pub async fn resolve_and_install(
         validate_lockfile_trust(security, &lockfile_old_copy, &lf)?;
         validate_typosquatting(security, &lockfile_old_copy, &deps, &lf)?;
         lf.config_hash = Some(config_hash);
-        let yaml = serde_yaml::to_string(&lf)?;
+        let yaml = serde_yml::to_string(&lf)?;
         std::fs::write(&lock_path, yaml)?;
         lf
     };
@@ -113,12 +113,7 @@ pub async fn resolve_and_install(
 
     let mut packages_by_name: HashMap<String, Vec<String>> = HashMap::new();
     for key in lockfile.packages.keys() {
-        let parts: Vec<&str> = key.split('@').collect();
-        let name = if key.starts_with('@') {
-            format!("@{}", parts[1])
-        } else {
-            parts[0].to_string()
-        };
+        let (name, _) = common::parse_package_id(key);
         packages_by_name.entry(name).or_default().push(key.clone());
     }
 
@@ -134,19 +129,8 @@ pub async fn resolve_and_install(
                 }
             } else {
                 for key in &versions {
-                    let parts: Vec<&str> = key.split('@').collect();
-                    let version = if key.starts_with('@') {
-                        parts.get(2).unwrap_or(&"0.0.0").to_string()
-                    } else {
-                        parts.get(1).unwrap_or(&"0.0.0").to_string()
-                    };
-
-                    let best_parts: Vec<&str> = best_key.split('@').collect();
-                    let best_version = if best_key.starts_with('@') {
-                        best_parts.get(2).unwrap_or(&"0.0.0").to_string()
-                    } else {
-                        best_parts.get(1).unwrap_or(&"0.0.0").to_string()
-                    };
+                    let (_, version) = common::parse_package_id(key);
+                    let (_, best_version) = common::parse_package_id(&best_key);
 
                     let v_new = semver::Version::parse(&version)
                         .unwrap_or_else(|_| semver::Version::new(0, 0, 0));
@@ -215,23 +199,8 @@ pub async fn resolve_and_install(
         let show_logs = show_logs;
 
         async move {
-            let parts: Vec<&str> = key.split('@').collect();
-            let name = if key.starts_with('@') {
-                if parts.len() > 1 {
-                    format!("@{}", parts[1])
-                } else {
-                    key.clone()
-                }
-            } else {
-                parts[0].to_string()
-            };
+            let (name, version) = common::parse_package_id(&key);
             let name = name.replace('/', std::path::MAIN_SEPARATOR_STR);
-
-            let version = if key.starts_with('@') {
-                parts.get(2).unwrap_or(&"unknown").to_string()
-            } else {
-                parts.get(1).unwrap_or(&"unknown").to_string()
-            };
 
             let pb = if show_logs {
                 let pb =
@@ -310,9 +279,16 @@ pub async fn resolve_and_install(
                 .get(&pkg.resolution.tarball)
                 .send()
                 .await?;
-            let stream = response.bytes_stream();
+            let bytes = response.bytes().await?;
 
-            let file_map = kumo_core::tarball::extract_streaming(store, stream).await?;
+            if let Err(e) = kumo_core::tarball::verify_shasum(&bytes, &pkg.resolution.shasum) {
+                if let Some(ref pb) = pb {
+                    pb.finish_with_message(format!("Integrity check failed: {}", name));
+                }
+                return Err(e);
+            }
+
+            let file_map = kumo_core::tarball::extract_and_store(store, &bytes).await?;
 
             store.save_index(&key, &file_map).await?;
 
@@ -360,7 +336,20 @@ pub async fn resolve_and_install(
 
     let results: Vec<_> = futures::StreamExt::collect(futures::StreamExt::buffer_unordered(stream, concurrent_limit)).await;
 
-    main_pb.finish_with_message("Done!");
+    let mut errors = 0;
+    for res in &results {
+        if let Err(e) = res {
+            errors += 1;
+            eprintln!("Error: {}", e);
+        }
+    }
+
+    if errors > 0 {
+        main_pb.finish_with_message(format!("Finished with {} errors.", errors));
+        anyhow::bail!("Installation failed with {} errors", errors);
+    } else {
+        main_pb.finish_with_message("Done!");
+    }
     println!("Installed {} unique packages.", winners.len());
 
     println!("Running lifecycle scripts...");
@@ -395,25 +384,13 @@ pub async fn resolve_and_install(
         println!("Total size: {:.2} KB", total_bytes as f64 / 1024.0);
     }
 
-    let mut errors = 0;
-    for res in results {
-        if let Err(e) = res {
-            errors += 1;
-            eprintln!("Error: {}", e);
-        }
-    }
-
-    if errors > 0 {
-        println!("Finished with {} errors.", errors);
-    }
-
     Ok(())
 }
 
 pub async fn install_global(
     store: &Store,
     resolver: &Resolver,
-    _security: &SecurityEngine,
+    security: &SecurityEngine,
     pkg_name: String,
     version_req: String,
 ) -> Result<()> {
@@ -427,7 +404,7 @@ pub async fn install_global(
     deps.insert(pkg_name.clone(), metadata.version.to_string());
     let lockfile = resolver.resolve_tree(&deps).await?;
 
-    let global_root = dirs::home_dir().unwrap().join(".kumo").join("global");
+    let global_root = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?.join(".kumo").join("global");
     let global_deps_dir = global_root.join("dependencies");
     let global_bin = global_root.join("bin");
 
@@ -435,10 +412,16 @@ pub async fn install_global(
 
     println!("Downloading and linking global dependencies...");
     for (key, pkg) in &lockfile.packages {
-        let pkg_name = key.split('@').next().unwrap();
+        let (pkg_name, version) = common::parse_package_id(key);
         let normalized_name = pkg_name.replace('/', std::path::MAIN_SEPARATOR_STR);
 
+        let valid = security.validate_package(&pkg_name, &version, None, false, None, false).await.unwrap_or(false);
+        if !valid {
+            anyhow::bail!("Security policy violation for global package {}", key);
+        }
+
         let bytes = reqwest::get(&pkg.resolution.tarball).await?.bytes().await?;
+        kumo_core::tarball::verify_shasum(&bytes, &pkg.resolution.shasum)?;
         let file_map = kumo_core::tarball::extract_and_store(store, &bytes).await?;
         let target_dir = global_deps_dir.join(normalized_name);
         kumo_core::package::link_package(store, &target_dir, &file_map).await?;
@@ -521,8 +504,7 @@ async fn run_install_scripts(
 
                 let bin_dir = deps_dir.join(".bin");
                 if bin_dir.exists() {
-                    let path = std::env::var("PATH").unwrap_or_default();
-                    let new_path = format!("{};{}", bin_dir.display(), path);
+                    let new_path = common::prepend_to_path(&bin_dir);
                     command.env("PATH", new_path);
                 }
             }
@@ -543,16 +525,7 @@ fn validate_lockfile_trust(
     new_lf: &Lockfile,
 ) -> Result<()> {
     for (key, new_pkg) in &new_lf.packages {
-        let parts: Vec<&str> = key.split('@').collect();
-        let name = if key.starts_with('@') {
-            if parts.len() > 1 {
-                format!("@{}", parts[1])
-            } else {
-                key.clone()
-            }
-        } else {
-            parts[0].to_string()
-        };
+        let (name, _) = common::parse_package_id(key);
 
         let new_has_sigs = new_pkg.resolution.signatures.as_ref().map_or(false, |s| !s.is_empty()) || new_pkg.resolution.npm_signature.is_some();
         let new_has_atts = new_pkg.resolution.attestations.is_some();
@@ -573,16 +546,7 @@ fn validate_lockfile_trust(
 
             let old_pkg_opt = old.packages.iter()
                 .find(|(k, _)| {
-                    let k_parts: Vec<&str> = k.split('@').collect();
-                    let k_name = if k.starts_with('@') {
-                        if k_parts.len() > 1 {
-                            format!("@{}", k_parts[1])
-                        } else {
-                            (*k).clone()
-                        }
-                    } else {
-                        k_parts[0].to_string()
-                    };
+                    let (k_name, _) = common::parse_package_id(k);
                     k_name == name
                 })
                 .map(|(_, p)| p);
@@ -621,16 +585,7 @@ fn validate_typosquatting(
     }
 
     for key in new_lf.packages.keys() {
-        let parts: Vec<&str> = key.split('@').collect();
-        let name = if key.starts_with('@') {
-            if parts.len() > 1 {
-                format!("@{}", parts[1])
-            } else {
-                key.clone()
-            }
-        } else {
-            parts[0].to_string()
-        };
+        let (name, _) = common::parse_package_id(key);
 
 
         if security.policy.trusted_packages.contains(&name) || security.policy.trust_policy_exclude.contains(&name) {

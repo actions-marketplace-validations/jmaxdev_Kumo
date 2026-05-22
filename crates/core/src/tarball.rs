@@ -10,6 +10,24 @@ use tar::Archive;
 use tokio::sync::mpsc;
 use tokio_util::io::SyncIoBridge;
 
+/// Verifies the SHA-1 checksum of tarball data against the expected `shasum` from the registry.
+/// Returns an error if the checksum does not match.
+pub fn verify_shasum(tarball_data: &[u8], expected_shasum: &str) -> Result<()> {
+    use sha1::{Sha1, Digest};
+    let mut hasher = Sha1::new();
+    hasher.update(tarball_data);
+    let result = hasher.finalize();
+    let actual_shasum = format!("{:x}", result);
+    if actual_shasum != expected_shasum {
+        anyhow::bail!(
+            "Tarball integrity check failed!\n  Expected SHA-1: {}\n  Actual SHA-1:   {}\n  This could indicate a corrupted download or a supply chain attack.",
+            expected_shasum,
+            actual_shasum
+        );
+    }
+    Ok(())
+}
+
 pub async fn extract_streaming<S>(store: &Store, stream: S) -> Result<HashMap<String, String>>
 where
     S: Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send + 'static + Unpin,
@@ -126,4 +144,19 @@ pub async fn extract_and_store(
     }
 
     Ok(file_map)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_verify_shasum() {
+        let data = b"hello world";
+        // SHA-1 of "hello world" is 2aae6c35c94fcfb415dbe95f408b9ce91ee846ed
+        let expected = "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed";
+        
+        assert!(verify_shasum(data, expected).is_ok());
+        assert!(verify_shasum(data, "wrong").is_err());
+    }
 }
