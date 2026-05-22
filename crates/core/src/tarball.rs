@@ -17,7 +17,7 @@ pub fn verify_shasum(tarball_data: &[u8], expected_shasum: &str) -> Result<()> {
     let mut hasher = Sha1::new();
     hasher.update(tarball_data);
     let result = hasher.finalize();
-    let actual_shasum = format!("{:x}", result);
+    let actual_shasum = result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
     if actual_shasum != expected_shasum {
         anyhow::bail!(
             "Tarball integrity check failed!\n  Expected SHA-1: {}\n  Actual SHA-1:   {}\n  This could indicate a corrupted download or a supply chain attack.",

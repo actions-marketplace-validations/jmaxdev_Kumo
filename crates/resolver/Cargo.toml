@@ -7,9 +7,9 @@ edition = "2021"
 serde = { version = "1.0", features = ["derive"] }
 semver = { version = "1.0", features = ["serde"] }
 anyhow = "1.0"
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
-tokio = { version = "1.36", features = ["full"] }
+reqwest = { version = "0.13", features = ["json", "rustls", "rustls-native-certs"] }
+tokio = { version = "1.52", features = ["full"] }
 serde_yml = "0.0.12"
 serde_json = "1.0"
-dirs = "5.0"
+dirs = "6.0"
 futures = "0.3"
