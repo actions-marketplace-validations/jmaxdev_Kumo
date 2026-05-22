@@ -10,8 +10,6 @@ use tar::Archive;
 use tokio::sync::mpsc;
 use tokio_util::io::SyncIoBridge;
 
-/// Verifies the SHA-1 checksum of tarball data against the expected `shasum` from the registry.
-/// Returns an error if the checksum does not match.
 pub fn verify_shasum(tarball_data: &[u8], expected_shasum: &str) -> Result<()> {
     use sha1::{Sha1, Digest};
     let mut hasher = Sha1::new();
@@ -153,7 +151,6 @@ mod tests {
     #[test]
     fn test_verify_shasum() {
         let data = b"hello world";
-        // SHA-1 of "hello world" is 2aae6c35c94fcfb415dbe95f408b9ce91ee846ed
         let expected = "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed";
         
         assert!(verify_shasum(data, expected).is_ok());

@@ -4,7 +4,6 @@ use resolver::Resolver;
 use security::SecurityEngine;
 use std::collections::HashMap;
 
-/// Represents an available upgrade for a single dependency.
 struct UpgradeCandidate {
     name: String,
     current_version: String,
@@ -60,11 +59,9 @@ pub async fn execute(
     log: bool,
     config_path: std::path::PathBuf,
 ) -> Result<()> {
-    // Read the configuration file
     let config_content: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&config_path)?)?;
 
-    // Parse packages list to extract upgrade filter vs package names
     let mut upgrade_type = None;
     let mut target_packages = Vec::new();
 
@@ -82,7 +79,6 @@ pub async fn execute(
         }
     }
 
-    // Collect dependencies to check based on --prod / --dev flags
     let mut deps_to_check: Vec<(String, String, DepSection)> = Vec::new();
 
     let include_prod = !dev_only;
@@ -117,7 +113,6 @@ pub async fn execute(
         return Ok(());
     }
 
-    // Filter to specific packages if provided
     if !target_packages.is_empty() {
         deps_to_check.retain(|(name, _, _)| target_packages.contains(name));
         if deps_to_check.is_empty() {
@@ -126,7 +121,6 @@ pub async fn execute(
         }
     }
 
-    // Read current lockfile to get locked versions
     let lock_path = std::env::current_dir()?.join("kumo.lock");
     let locked_versions: HashMap<String, String> = if lock_path.exists() {
         let lockfile: resolver::Lockfile =
@@ -136,7 +130,6 @@ pub async fn execute(
         HashMap::new()
     };
 
-    // Resolve target available versions for each dependency
     println!("Checking for updates...\n");
 
     let pb = indicatif::ProgressBar::new(deps_to_check.len() as u64);
@@ -164,7 +157,6 @@ pub async fn execute(
             semver::Version::parse(cleaned).ok()
         };
 
-        // Resolve the package metadata for the target upgrade version
         let meta = match upgrade_type {
             Some(ChangeType::Patch) | Some(ChangeType::Minor) => {
                 if let Some(cur) = &cur_version_opt {
@@ -194,7 +186,6 @@ pub async fn execute(
                                     }
                                 }
                             } else {
-                                // No newer version matching the filter was found, treat as already up-to-date
                                 match resolver.resolve_package_fresh(name, &current_version).await {
                                     Ok(m) => m,
                                     Err(_) => {
@@ -221,7 +212,6 @@ pub async fn execute(
                         }
                     }
                 } else {
-                    // Current version cannot be parsed, fallback to latest
                     match resolver.resolve_package_fresh(name, "latest").await {
                         Ok(m) => m,
                         Err(e) => {
@@ -235,7 +225,6 @@ pub async fn execute(
                 }
             }
             _ => {
-                // By default (major, latest or None), upgrade to the absolute latest version
                 match resolver.resolve_package_fresh(name, "latest").await {
                     Ok(m) => m,
                     Err(e) => {
@@ -297,7 +286,6 @@ pub async fn execute(
 
     pb.finish_and_clear();
 
-    // Separate into upgradable and up-to-date
     let upgradable: Vec<&UpgradeCandidate> = candidates
         .iter()
         .filter(|c| !matches!(c.change_type, ChangeType::UpToDate))
@@ -313,7 +301,6 @@ pub async fn execute(
         return Ok(());
     }
 
-    // Print upgrade table
     print_upgrade_table(&upgradable, up_to_date_count);
 
     if dry_run {
@@ -323,7 +310,6 @@ pub async fn execute(
         return Ok(());
     }
 
-    // Apply upgrades: update config file
     let mut config_content: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&config_path)?)?;
 
@@ -374,7 +360,6 @@ pub async fn execute(
     );
 
 
-    // Re-resolve and reinstall by collecting all deps from the updated config
     println!("Resolving and installing updated dependencies...\n");
 
     let updated_config: serde_json::Value = serde_json::from_str(&json)?;
@@ -397,7 +382,6 @@ pub async fn execute(
         }
     }
 
-    // Delete the lockfile config_hash to force a full re-resolution
     if lock_path.exists() {
         let lock_content = std::fs::read_to_string(&lock_path)?;
         if let Ok(mut lockfile) = serde_yml::from_str::<resolver::Lockfile>(&lock_content) {
@@ -418,7 +402,6 @@ pub async fn execute(
     Ok(())
 }
 
-/// Classifies the type of version change between current and new.
 fn classify_change(current: &str, new: &str) -> ChangeType {
     let cur = match semver::Version::parse(current) {
         Ok(v) => v,
@@ -440,31 +423,25 @@ fn classify_change(current: &str, new: &str) -> ChangeType {
     }
 }
 
-/// Updates the version in a semver range string while preserving the range prefix.
-/// e.g., "^1.2.3" + "1.5.0" -> "^1.5.0", "~2.0.0" + "2.1.0" -> "~2.1.0"
 fn update_range_version(original_range: &str, new_version: &str) -> String {
     let trimmed = original_range.trim();
     if trimmed == "latest" || trimmed == "*" || trimmed.is_empty() {
         return format!("^{}", new_version);
     }
 
-    // Extract the prefix (^, ~, >=, etc.)
     let prefix_end = trimmed
         .find(|c: char| c.is_ascii_digit())
         .unwrap_or(0);
     let prefix = &trimmed[..prefix_end];
 
     if prefix.is_empty() {
-        // Exact version, keep it exact
         new_version.to_string()
     } else {
         format!("{}{}", prefix, new_version)
     }
 }
 
-/// Prints a formatted table of available upgrades.
 fn print_upgrade_table(upgradable: &[&UpgradeCandidate], up_to_date_count: usize) {
-    // Calculate column widths
     let name_width = upgradable
         .iter()
         .map(|c| c.name.len())

@@ -47,18 +47,15 @@ pub async fn link_package(
             let result = tokio::task::spawn_blocking(move || {
                 let mut attempts = 0;
                 loop {
-                    // On non-Windows, try reflink (CoW) first
                     #[cfg(not(target_os = "windows"))]
                     {
                         if reflink_copy::reflink(&src_clone, &dest_clone).is_ok() {
                             return Ok(());
                         }
                     }
-                    // Try hardlink
                     if std::fs::hard_link(&src_clone, &dest_clone).is_ok() {
                         return Ok(());
                     }
-                    // Fallback to copy
                     match std::fs::copy(&src_clone, &dest_clone) {
                         Ok(_) => return Ok(()),
                         Err(e) => {

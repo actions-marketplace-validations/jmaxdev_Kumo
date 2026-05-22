@@ -69,24 +69,17 @@ enum Commands {
     },
     #[command(alias = "up")]
     Upgrade {
-        /// Specific packages to upgrade (empty = all) or upgrade type (major, minor, patch/parch)
         packages: Vec<String>,
-        /// Upgrade to the absolute latest version, ignoring semver ranges (now default)
         #[arg(short = 'L', long)]
         latest: bool,
-        /// Only upgrade dependencies (skip devDependencies)
         #[arg(long)]
         prod: bool,
-        /// Only upgrade devDependencies (skip dependencies)
         #[arg(long)]
         dev: bool,
-        /// Save upgraded versions as fixed (without ^ prefix)
         #[arg(short = 'F', long)]
         fixed: bool,
-        /// Show available updates without applying them
         #[arg(short = 'n', long)]
         dry_run: bool,
-        /// Show detailed installation progress
         #[arg(long)]
         log: bool,
     },

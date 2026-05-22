@@ -37,7 +37,6 @@ impl Resolver {
         self.resolve_package_internal(&name, &range).await
     }
 
-    /// Resolves a package by invalidating the metadata cache first (fresh fetch).
     pub async fn resolve_package_fresh(&self, name: &str, range: &str) -> Result<PackageMetadata> {
         let cache_path = cache::get_metadata_cache_path(name);
         let _ = std::fs::remove_file(&cache_path);
@@ -45,7 +44,6 @@ impl Resolver {
         self.resolve_package_internal(name, range).await
     }
 
-    /// Gets the absolute latest version of a package from the registry (dist-tags.latest).
     pub async fn get_latest_version(&self, name: &str) -> Result<String> {
         let cache_path = cache::get_metadata_cache_path(name);
         let _ = std::fs::remove_file(&cache_path);
@@ -58,7 +56,6 @@ impl Resolver {
             .ok_or_else(|| anyhow!("No latest tag found for {}", name))
     }
 
-    /// Gets all available versions of a package from the registry metadata cache or registry.
     pub async fn get_available_versions(&self, name: &str) -> Result<Vec<Version>> {
         let cache_path = cache::get_metadata_cache_path(name);
 
@@ -106,7 +103,6 @@ impl Resolver {
             self.fetch_and_cache_metadata(name, &cache_path).await?
         };
 
-        // We wrap the resolution in a loop (up to 2 attempts) to handle stale cache refresh
         let mut attempts = 0;
         let version_str = loop {
             attempts += 1;
@@ -153,12 +149,10 @@ impl Resolver {
                 }
             }
 
-            // If we couldn't resolve or find version data, and we used cache, refresh cache and retry
             if from_cache && attempts < 2 {
                 response = self.fetch_and_cache_metadata(name, &cache_path).await?;
                 from_cache = false;
             } else {
-                // If it fails after fresh fetch (or we didn't use cache), return the appropriate error
                 let reqs_res = range
                     .split("||")
                     .map(|r| {

@@ -5,19 +5,25 @@ use std::process::Command;
 
 #[derive(Parser)]
 #[command(name = "kx")]
-#[command(version)]
+#[command(disable_version_flag = true, disable_help_flag = true)]
 #[command(about = "Kumo Execute: Run binaries from dependencies/.bin or node_modules/.bin", long_about = None)]
 struct KxCli {
+    #[arg(long, short = 'V', help = "Print version")]
+    version: bool,
+
+    #[arg(long, short = 'h', help = "Print help")]
+    help: bool,
+
     #[arg(long, help = "Prune cached kx packages older than 7 days")]
     prune: bool,
 
     #[arg(long = "full-prune", help = "When pruning, delete all packages instead of only those older than 7 days")]
     full_prune: bool,
 
-    #[arg(required_unless_present_any = ["prune", "full_prune"])]
+    #[arg(required_unless_present_any = ["prune", "full_prune", "version", "help"])]
     binary: Option<String>,
 
-    #[arg(trailing_var_arg = true)]
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
 }
 
@@ -33,7 +39,27 @@ async fn main() -> Result<()> {
         }
     });
 
-    let cli = KxCli::parse();
+    let mut cli = KxCli::parse();
+
+    if cli.binary.is_none() {
+        if cli.version {
+            println!("kx {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+        if cli.help {
+            use clap::CommandFactory;
+            KxCli::command().print_help()?;
+            return Ok(());
+        }
+    } else {
+        if cli.version {
+            cli.args.insert(0, "--version".to_string());
+        }
+        if cli.help {
+            cli.args.insert(0, "--help".to_string());
+        }
+    }
+
     if cli.prune || cli.full_prune {
         prune_kx_cache(cli.full_prune).await?;
         return Ok(());
