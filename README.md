@@ -150,7 +150,7 @@ For more CLI commands, check out the [Full CLI Documentation](docs/kumo.md).
 
 ```bash
 # Run local TypeScript compiler
-kx tsc --version
+kx -p typescript tsc --version
 
 # Run a package temporarily
 kx cowsay "Hello, Kumo!"

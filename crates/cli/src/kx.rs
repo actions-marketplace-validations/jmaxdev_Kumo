@@ -20,6 +20,9 @@ struct KxCli {
     #[arg(long = "full-prune", help = "When pruning, delete all packages instead of only those older than 7 days")]
     full_prune: bool,
 
+    #[arg(short = 'p', long = "package", help = "Package(s) to install for the execution (e.g. kx -p typescript tsc)")]
+    packages: Vec<String>,
+
     #[arg(required_unless_present_any = ["prune", "full_prune", "version", "help"])]
     binary: Option<String>,
 
@@ -136,15 +139,30 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
 
 
     let mut root_deps = HashMap::new();
-    root_deps.insert(binary.clone(), target_version.clone());
+    let main_package_name = if !cli.packages.is_empty() {
+        let (first_pkg, _) = common::parse_package_arg(&cli.packages[0]);
+        first_pkg
+    } else {
+        binary.clone()
+    };
+
+    if !cli.packages.is_empty() {
+        for pkg_arg in &cli.packages {
+            let (pkg_name, ver) = common::parse_package_arg(pkg_arg);
+            root_deps.insert(pkg_name, ver);
+        }
+    } else {
+        root_deps.insert(binary.clone(), target_version.clone());
+    }
+
     let lockfile = resolver.resolve_tree(&root_deps).await?;
     
     let main_pkg_id = lockfile.packages.keys()
         .find(|k| {
             let (k_name, _) = common::parse_package_id(k);
-            k_name == binary
+            k_name == main_package_name
         })
-        .ok_or_else(|| anyhow!("Could not find package {} in resolution", binary))?;
+        .ok_or_else(|| anyhow!("Could not find package {} in resolution", main_package_name))?;
     let (_, version) = common::parse_package_id(main_pkg_id);
 
     let mut exec_bin_name = binary.clone();

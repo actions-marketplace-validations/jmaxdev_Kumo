@@ -18,7 +18,7 @@ kx <binary> [args...]
 
 Run a locally installed tool:
 ```bash
-kx tsc --version
+kx -p typescript tsc --version
 ```
 
 Run a tool without installing it permanently:
