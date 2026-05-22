@@ -138,7 +138,7 @@ jobs:
         if [ "$RUNNER_OS" = "Windows" ]; then
           certutil -hashfile ${{ matrix.artifact_name }} SHA256 > ${{ matrix.artifact_name }}.sha256
         else
-          sha256sum ${{ matrix.artifact_name }} > ${{ matrix.artifact_name }}.sha256
+          shasum -a 256 ${{ matrix.artifact_name }} > ${{ matrix.artifact_name }}.sha256
         fi
       shell: bash
 
