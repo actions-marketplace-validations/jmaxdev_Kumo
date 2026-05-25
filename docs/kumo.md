@@ -171,6 +171,25 @@ kumo upgrade --prod
 kumo upgrade --dry-run
 ```
 
+### `ts` (alias: `tsx`)
+Provides a built-in TypeScript execution environment without requiring local dependencies. It automatically downloads the necessary compilers via Kumo Execute (`kx`) in the background.
+
+#### `ts build`
+Runs the official TypeScript compiler (`tsc`) on your project.
+
+```bash
+kumo ts build src/index.ts --noEmit
+```
+_For configuration options, see the [tsc documentation](https://www.typescriptlang.org/docs/handbook/compiler-options.html)._
+
+#### `ts exec`
+Executes a TypeScript file directly using `tsx` (TypeScript Execute).
+
+```bash
+kumo ts exec src/index.ts
+```
+_For execution options, see the [tsx documentation](https://tsx.hirok.io/getting-started)._
+
 ### `config`
 Manage Kumo configuration and security policies.
 

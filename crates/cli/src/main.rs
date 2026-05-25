@@ -84,6 +84,7 @@ enum Commands {
         log: bool,
     },
     #[command(alias = "tsx")]
+    #[command(about = "Execute TypeScript files via tsx or compile with tsc")]
     Ts {
         #[command(subcommand)]
         subcommand: TsSubcommand,
@@ -94,10 +95,12 @@ enum Commands {
 
 #[derive(Subcommand)]
 pub enum TsSubcommand {
+    #[command(about = "Run the TypeScript compiler (tsc). Docs: https://www.typescriptlang.org/docs/handbook/compiler-options.html")]
     Build {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    #[command(about = "Execute a TypeScript file directly (tsx). Docs: https://tsx.hirok.io/getting-started")]
     Exec {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
