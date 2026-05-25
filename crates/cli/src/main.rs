@@ -83,11 +83,26 @@ enum Commands {
         #[arg(long)]
         log: bool,
     },
+    #[command(alias = "tsx")]
+    Ts {
+        #[command(subcommand)]
+        subcommand: TsSubcommand,
+    },
     #[command(external_subcommand)]
     External(Vec<String>),
 }
 
-
+#[derive(Subcommand)]
+pub enum TsSubcommand {
+    Build {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    Exec {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+}
 
 #[derive(Subcommand)]
 pub enum ConfigSubcommand {
@@ -185,6 +200,26 @@ async fn main() -> Result<()> {
         }
         Commands::Config { subcommand } => {
             commands::config::execute(subcommand).await?;
+        }
+        Commands::Ts { subcommand } => {
+            let current_exe = std::env::current_exe()?;
+            let kx_exe = current_exe.with_file_name(if cfg!(windows) { "kx.exe" } else { "kx" });
+            
+            let mut cmd = std::process::Command::new(kx_exe);
+            
+            match subcommand {
+                TsSubcommand::Build { args } => {
+                    cmd.arg("-p").arg("typescript").arg("tsc").args(args);
+                }
+                TsSubcommand::Exec { args } => {
+                    cmd.arg("tsx").args(args);
+                }
+            }
+            
+            let status = cmd.status()?;
+            if !status.success() {
+                std::process::exit(status.code().unwrap_or(1));
+            }
         }
         Commands::External(args) => {
             if args.is_empty() {
