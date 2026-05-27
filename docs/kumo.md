@@ -174,6 +174,13 @@ kumo upgrade --dry-run
 ### `ts` (alias: `tsx`)
 Provides a built-in TypeScript execution environment without requiring local dependencies. It automatically downloads the necessary compilers via Kumo Execute (`kx`) in the background.
 
+#### `ts init`
+Initializes a new TypeScript project by generating a default `tsconfig.json` file (runs `tsc --init`).
+
+```bash
+kumo ts init
+```
+
 #### `ts build`
 Runs the official TypeScript compiler (`tsc`) on your project.
 

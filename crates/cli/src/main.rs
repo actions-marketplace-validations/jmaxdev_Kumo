@@ -16,11 +16,13 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     #[command(alias = "i")]
+    #[command(about = "Install dependencies from kumo.json or package.json")]
     Install {
         #[arg(long)]
         log: bool,
     },
     #[command(alias = "a")]
+    #[command(about = "Add a new package to the project")]
     Add {
         name: String,
         #[arg(short, long)]
@@ -33,41 +35,55 @@ enum Commands {
     #[command(alias = "rm")]
     #[command(alias = "un")]
     #[command(alias = "uninstall")]
+    #[command(about = "Remove a package from the project")]
     Remove {
         name: String,
     },
+    #[command(about = "Scan project dependencies for known vulnerabilities")]
     Scan,
     #[command(alias = "st")]
+    #[command(about = "Show statistics about the Kumo global cache and store")]
     Stats,
+    #[command(about = "Maintenance commands to clean cached files or dependencies")]
     Prune {
         #[command(subcommand)]
         subcommand: commands::prune::PruneSubcommand,
     },
     #[command(alias = "dr")]
+    #[command(about = "Run a health check on the store to detect corrupted files")]
     Doctor,
     #[command(alias = "ex")]
+    #[command(about = "Explain why a package is present in the dependency tree")]
     Explain {
         name: String,
     },
+    #[command(about = "Manage Kumo configuration and security policies")]
     Config {
         #[command(subcommand)]
         subcommand: ConfigSubcommand,
     },
+    #[command(about = "Detect and list local packages in a monorepo structure")]
     Workspaces,
+    #[command(about = "Extract a package to .kumo/patch for manual patching")]
     Patch {
         name: String,
     },
+    #[command(about = "Show a security timeline for the project")]
     Timeline,
+    #[command(about = "Generate a Graphviz DOT file of the project's dependency tree")]
     Graph,
+    #[command(about = "Execute a script within the Kumo Sandbox for secure execution")]
     Sandbox {
         script: String,
     },
+    #[command(about = "Check for and install the latest version of the Kumo CLI")]
     Update {
         #[arg(long)]
         pre: bool,
         version: Option<String>,
     },
     #[command(alias = "up")]
+    #[command(about = "Update project dependencies to their latest available versions")]
     Upgrade {
         packages: Vec<String>,
         #[arg(short = 'L', long)]
@@ -105,6 +121,8 @@ pub enum TsSubcommand {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    #[command(about = "Initialize a new TypeScript project (tsc --init)")]
+    Init,
 }
 
 #[derive(Subcommand)]
@@ -216,6 +234,9 @@ async fn main() -> Result<()> {
                 }
                 TsSubcommand::Exec { args } => {
                     cmd.arg("tsx").args(args);
+                }
+                TsSubcommand::Init => {
+                    cmd.arg("-p").arg("typescript").arg("tsc").arg("--init");
                 }
             }
             
