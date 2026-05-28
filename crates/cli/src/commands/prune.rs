@@ -16,6 +16,8 @@ pub enum PruneSubcommand {
         full: bool,
         #[arg(long, help = "Recursively find and remove all dependency directories in subdirectories")]
         remove_all: bool,
+        #[arg(help = "Path to start searching or pruning from. Defaults to current directory")]
+        path: Option<String>,
     },
     #[command(about = "Clean both the global store and the registry cache")]
     All,
@@ -29,8 +31,8 @@ pub async fn execute(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
         PruneSubcommand::Cache => {
             prune_cache().await?;
         }
-        PruneSubcommand::Deps { full, remove_all } => {
-            prune_deps(full, remove_all).await?;
+        PruneSubcommand::Deps { full, remove_all, path } => {
+            prune_deps(*full, *remove_all, path.clone()).await?;
         }
         PruneSubcommand::All => {
             prune_store(store).await?;
@@ -127,13 +129,17 @@ async fn prune_cache() -> Result<()> {
     Ok(())
 }
 
-async fn prune_deps(full: bool, remove_all: bool) -> Result<()> {
+async fn prune_deps(full: bool, remove_all: bool, path: Option<String>) -> Result<()> {
     let deps_dir = crate::common::get_deps_dir();
-    let current_dir = std::env::current_dir()?;
+    let current_dir = if let Some(p) = path {
+        std::path::PathBuf::from(p)
+    } else {
+        std::env::current_dir()?
+    };
 
     if remove_all {
         println!("Searching for dependency directories to remove recursively...");
-        
+
         fn find_and_remove(dir: &std::path::Path, deps_name: &str, full: bool, count: &mut u64) {
             if let Ok(entries) = std::fs::read_dir(dir) {
                 for entry in entries.flatten() {
@@ -168,7 +174,7 @@ async fn prune_deps(full: bool, remove_all: bool) -> Result<()> {
 
         let mut count = 0;
         find_and_remove(&current_dir, &deps_dir, full, &mut count);
-        
+
         println!("Removed {} items in total.", count);
     } else {
         println!("Pruning {} directory...", deps_dir);
@@ -183,9 +189,3 @@ async fn prune_deps(full: bool, remove_all: bool) -> Result<()> {
                 let shield = ShieldManager::new();
                 let _ = shield.unshield_file(&lock_path);
                 std::fs::remove_file(lock_path)?;
-                println!("Deleted kumo.lock");
-            }
-        }
-    }
-    Ok(())
-}
