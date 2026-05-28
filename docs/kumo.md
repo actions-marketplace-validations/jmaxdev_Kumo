@@ -108,6 +108,20 @@ Explains why a package is present in the dependency tree by showing which other 
 kumo explain <package-name>
 ```
 
+### `link <path>`
+Symlinks a local package into the project for development. It reads the package name from `package.json` or `kumo.json` at the given path and creates a symlink in the project's dependency directory.
+
+```bash
+kumo link ../my-local-pkg
+```
+
+### `unlink <name>`
+Removes a symlink created by `kumo link`. It expects the name of the package as it appears in the dependencies directory. Note that this command only removes the symlink; if you need the original package back from the registry, you should run `kumo install` afterwards.
+
+```bash
+kumo unlink my-local-pkg
+```
+
 ### `workspaces`
 Detects and lists local packages in a monorepo structure.
 

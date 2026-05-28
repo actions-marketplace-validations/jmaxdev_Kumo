@@ -111,6 +111,10 @@ enum Commands {
     Link {
         path: String,
     },
+    #[command(about = "Remove a symlinked package from the project")]
+    Unlink {
+        name: String,
+    },
     #[command(alias = "audit-fix")]
     #[command(about = "Automatically fix known vulnerabilities by upgrading affected packages")]
     AuditFix,
@@ -289,6 +293,9 @@ async fn main() -> Result<()> {
         }
         Commands::Link { path } => {
             commands::link::execute(path).await?;
+        }
+        Commands::Unlink { name } => {
+            commands::unlink::execute(name).await?;
         }
         Commands::AuditFix => {
             commands::audit_fix::execute(&security).await?;
