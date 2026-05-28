@@ -1,5 +1,6 @@
 use anyhow::Result;
 use kumo_core::Store;
+use kumo_core::shield::ShieldManager;
 use resolver::{Lockfile, Resolver};
 use security::SecurityEngine;
 use std::collections::HashMap;
@@ -95,6 +96,11 @@ pub async fn resolve_and_install(
             validate_typosquatting(security, &lockfile_old_copy, &deps, &lf)?;
             lf.config_hash = Some(config_hash);
             let yaml = serde_yml::to_string(&lf)?;
+            
+            let shield = ShieldManager::new();
+            if lock_path.exists() {
+                let _ = shield.unshield_file(&lock_path);
+            }
             std::fs::write(&lock_path, yaml)?;
             lf
         }
@@ -105,9 +111,16 @@ pub async fn resolve_and_install(
         validate_typosquatting(security, &lockfile_old_copy, &deps, &lf)?;
         lf.config_hash = Some(config_hash);
         let yaml = serde_yml::to_string(&lf)?;
+        
+        let shield = ShieldManager::new();
+        if lock_path.exists() {
+            let _ = shield.unshield_file(&lock_path);
+        }
         std::fs::write(&lock_path, yaml)?;
         lf
     };
+
+    security.validate_lockfile(&lockfile)?;
 
     use rayon::prelude::*;
 
@@ -361,7 +374,7 @@ pub async fn resolve_and_install(
                     .join(&deps_dir_name)
                     .join(&normalized_name);
                 if !scripts.is_empty() {
-                    let _ = run_install_scripts(&target_dir, scripts).await;
+                    let _ = run_install_scripts(&target_dir, scripts, security).await;
                 }
             }
         }
@@ -382,6 +395,12 @@ pub async fn resolve_and_install(
         println!("Total size: {:.2} MB", total_bytes as f64 / 1024.0 / 1024.0);
     } else {
         println!("Total size: {:.2} KB", total_bytes as f64 / 1024.0);
+    }
+
+    let shield = ShieldManager::new();
+    if shield.is_active() {
+        let _ = shield.shield_file(&lock_path);
+        let _ = shield.shield_file(&config_path);
     }
 
     Ok(())
@@ -461,32 +480,47 @@ async fn create_shim(
 async fn run_install_scripts(
     pkg_dir: &std::path::Path,
     scripts: &HashMap<String, String>,
+    security_engine: &security::SecurityEngine,
 ) -> Result<()> {
+    let proxy_port = security::proxy::start_proxy(security_engine.policy.allowed_domains.clone()).await.ok();
+    
     for script_name in &["preinstall", "install", "postinstall"] {
         if let Some(script_content) = scripts.get(*script_name) {
 
-            let suspicious_patterns = [
-                ".ssh", ".aws", ".claudecode", ".cursor", ".vscode", ".env"
-            ];
+            let mut all_warnings = Vec::new();
             
-            let mut is_suspicious = false;
-            let script_content_lower = script_content.to_lowercase();
-            for pattern in &suspicious_patterns {
-                if script_content_lower.contains(pattern) {
-                    is_suspicious = true;
-                    break;
+            // Analyze the script string itself (in case of inline evaluation)
+            if let Ok(warnings) = security::ast::analyze_script(script_content) {
+                all_warnings.extend(warnings);
+            }
+            
+            // Try to find .js files referenced in the command and analyze them
+            let words: Vec<&str> = script_content.split_whitespace().collect();
+            for word in words {
+                if word.ends_with(".js") || word.ends_with(".cjs") || word.ends_with(".mjs") || word.ends_with(".ts") {
+                    let file_path = pkg_dir.join(word);
+                    if file_path.exists() {
+                        if let Ok(content) = std::fs::read_to_string(&file_path) {
+                            if let Ok(warnings) = security::ast::analyze_script(&content) {
+                                all_warnings.extend(warnings);
+                            }
+                        }
+                    }
                 }
             }
 
-            if is_suspicious {
+            if !all_warnings.is_empty() {
                 eprintln!(
-                    "🚨 \x1b[31mSecurity Violation:\x1b[0m Script '{}' in package {:?} blocked! It attempts to access sensitive paths ({})",
-                    script_name, pkg_dir.file_name().unwrap_or_default(), script_content
+                    "🚨 \x1b[31mSecurity Violation:\x1b[0m Script '{}' in package {:?} blocked by Static Analysis!",
+                    script_name, pkg_dir.file_name().unwrap_or_default()
                 );
+                for w in all_warnings {
+                    eprintln!("  - {}", w);
+                }
                 continue;
             }
 
-            let mut command = security::sandbox::SandboxRunner::create_command(pkg_dir, script_content, false);
+            let mut command = security::sandbox::SandboxRunner::create_command(pkg_dir, script_content, false, proxy_port);
 
             if let Some(deps_dir) = pkg_dir.parent() {
                 let real_deps_dir = if deps_dir
@@ -509,7 +543,7 @@ async fn run_install_scripts(
                 }
             }
 
-            let status = command.current_dir(pkg_dir).status()?;
+            let status = security::sandbox::SandboxRunner::execute_command(&mut command)?;
             if !status.success() {
                 std::process::exit(status.code().unwrap_or(1));
             }

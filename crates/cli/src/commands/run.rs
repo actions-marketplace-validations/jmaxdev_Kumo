@@ -303,3 +303,52 @@ pub async fn execute(name: &str, args: Vec<String>) -> Result<()> {
 
     anyhow::bail!("Script or binary '{}' not found in configuration or .bin", name);
 }
+
+pub async fn execute_interactive() -> Result<()> {
+    use dialoguer::{theme::ColorfulTheme, Select};
+    
+    let project_dir = std::env::current_dir()?;
+    let config_files = ["package.json", "kumo.json"];
+    let mut scripts = std::collections::BTreeMap::new();
+    
+    for config_file in config_files {
+        let path = project_dir.join(config_file);
+        if path.exists() {
+            let content = std::fs::read_to_string(&path)?;
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(s) = v.get("scripts").and_then(|s| s.as_object()) {
+                    for (k, val) in s {
+                        if let Some(cmd) = val.as_str() {
+                            scripts.insert(k.clone(), cmd.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if scripts.is_empty() {
+        anyhow::bail!("No scripts found in package.json or kumo.json");
+    }
+    
+    let mut items = Vec::new();
+    let mut keys = Vec::new();
+    
+    for (k, v) in &scripts {
+        items.push(format!("{:<15} {}", k, v));
+        keys.push(k.clone());
+    }
+    
+    println!("Select a script to run:");
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .items(&items)
+        .default(0)
+        .interact()?;
+        
+    let selected_script = &keys[selection];
+    println!("Running script '{}'...", selected_script);
+    
+    // Call the normal execute function with no extra args
+    let args = Vec::new();
+    execute(selected_script, args).await
+}

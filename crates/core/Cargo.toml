@@ -13,6 +13,7 @@ anyhow = "1.0"
 walkdir = "2.4"
 tar = "0.4"
 flate2 = "1.1"
+dirs = "6.0"
 reqwest = { version = "0.13", features = ["json", "rustls", "rustls-native-certs", "stream"] }
 futures-util = "0.3"
 tempfile = "3.10"

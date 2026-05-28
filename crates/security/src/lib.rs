@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 pub mod sandbox;
+pub mod ast;
+pub mod proxy;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Vulnerability {
@@ -41,6 +43,7 @@ pub struct Policy {
     pub trust_policy_exclude: HashSet<String>,
     pub trust_policy_ignore_after: u64,
     pub protected_packages: HashSet<String>,
+    pub allowed_domains: HashSet<String>,
 }
 
 impl Default for Policy {
@@ -60,6 +63,15 @@ impl Default for Policy {
             trust_policy_exclude: HashSet::new(),
             trust_policy_ignore_after: 10080,
             protected_packages: HashSet::new(),
+            allowed_domains: vec![
+                "github.com",
+                "objects.githubusercontent.com",
+                "registry.npmjs.org",
+                "nodejs.org",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
         }
     }
 }
@@ -67,14 +79,85 @@ impl Default for Policy {
 pub struct SecurityEngine {
     pub policy: Policy,
     client: reqwest::Client,
+    popular_packages: HashSet<String>,
 }
 
 impl SecurityEngine {
     pub fn new(policy: Policy) -> Self {
+        let client = reqwest::Client::new();
+        let popular_packages = Self::load_popular_packages_sync();
         Self {
             policy,
-            client: reqwest::Client::new(),
+            client,
+            popular_packages,
         }
+    }
+
+    fn get_popular_packages_path() -> Option<std::path::PathBuf> {
+        dirs::home_dir().map(|h| h.join(".kumo").join("top_packages.json"))
+    }
+
+    fn load_popular_packages_sync() -> HashSet<String> {
+        if let Some(path) = Self::get_popular_packages_path() {
+            if path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    if let Ok(names) = serde_json::from_str::<Vec<String>>(&content) {
+                        return names.into_iter().collect();
+                    }
+                }
+            }
+        }
+        HashSet::new()
+    }
+
+    fn needs_refresh() -> bool {
+        if let Some(path) = Self::get_popular_packages_path() {
+            if let Ok(meta) = std::fs::metadata(&path) {
+                if let Ok(modified) = meta.modified() {
+                    if let Ok(elapsed) = modified.elapsed() {
+                        return elapsed.as_secs() > 7 * 24 * 60 * 60;
+                    }
+                }
+            }
+            return true;
+        }
+        true
+    }
+
+    pub async fn refresh_popular_packages(&mut self) -> Result<()> {
+        if !Self::needs_refresh() {
+            return Ok(());
+        }
+
+        let mut all_names: Vec<String> = Vec::new();
+
+        let url = "https://data.jsdelivr.com/v1/stats/packages";
+        if let Ok(resp) = self.client.get(url).send().await {
+            if let Ok(data) = resp.json::<serde_json::Value>().await {
+                if let Some(arr) = data.as_array() {
+                    for obj in arr {
+                        if let Some(name) = obj.get("name").and_then(|n| n.as_str()) {
+                            if all_names.len() < 1000 {
+                                all_names.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if !all_names.is_empty() {
+            if let Some(path) = Self::get_popular_packages_path() {
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let json = serde_json::to_string(&all_names)?;
+                let _ = std::fs::write(&path, json);
+            }
+            self.popular_packages = all_names.into_iter().collect();
+        }
+
+        Ok(())
     }
 
     pub fn get_trust_level(&self, has_signatures: bool, has_attestations: bool) -> TrustLevel {
@@ -255,18 +338,26 @@ impl SecurityEngine {
             name
         };
 
-
-        if self.policy.protected_packages.contains(name_normalized) || existing_deps.contains(name) {
+        if self.policy.protected_packages.contains(name_normalized) || existing_deps.contains(name) || self.popular_packages.contains(name) {
             return None;
         }
 
+        for pop in &self.popular_packages {
+            let pop_normalized = if pop.starts_with('@') {
+                pop.split('/').nth(1).unwrap_or(pop)
+            } else {
+                pop
+            };
+            if is_suspiciously_similar(name_normalized, pop_normalized) {
+                return Some(pop.to_string());
+            }
+        }
 
         for pop in &self.policy.protected_packages {
             if is_suspiciously_similar(name_normalized, pop) {
                 return Some(pop.to_string());
             }
         }
-
 
         for dep in existing_deps {
             let dep_normalized = if dep.starts_with('@') {
@@ -280,6 +371,84 @@ impl SecurityEngine {
         }
 
         None
+    }
+
+    pub fn validate_lockfile(&self, lockfile: &resolver::Lockfile) -> Result<()> {
+        for (pkg_key, pkg_data) in &lockfile.packages {
+            let (name, _version) = if pkg_key.contains('@') && !pkg_key.starts_with('@') {
+                let parts: Vec<&str> = pkg_key.split('@').collect();
+                (parts[0].to_string(), parts[1].to_string())
+            } else if pkg_key.starts_with('@') {
+                let parts: Vec<&str> = pkg_key.split('@').collect();
+                if parts.len() >= 3 {
+                    (format!("@{}", parts[1]), parts[2].to_string())
+                } else {
+                    (pkg_key.clone(), "".to_string())
+                }
+            } else {
+                (pkg_key.clone(), "".to_string())
+            };
+
+            let tarball_url = &pkg_data.resolution.tarball;
+            
+            // 1. HTTPS Enforcement
+            if !tarball_url.starts_with("https://") && !tarball_url.starts_with("git+https://") && !tarball_url.starts_with("git+ssh://") {
+                anyhow::bail!(
+                    "Lockfile injection detected! Package '{}' resolves to an insecure or unsupported URL scheme: {}",
+                    name, tarball_url
+                );
+            }
+
+            // 2. Host Validation
+            if let Ok(parsed_url) = url::Url::parse(tarball_url) {
+                if let Some(host) = parsed_url.host_str() {
+                    let mut allowed = false;
+                    for domain in &self.policy.allowed_domains {
+                        if host == domain || host.ends_with(&format!(".{}", domain)) {
+                            allowed = true;
+                            break;
+                        }
+                    }
+                    if !allowed {
+                        anyhow::bail!(
+                            "Lockfile injection detected! Package '{}' resolves to an untrusted host '{}'. URL: {}",
+                            name, host, tarball_url
+                        );
+                    }
+                }
+            } else {
+                anyhow::bail!("Lockfile injection detected! Invalid URL for package '{}': {}", name, tarball_url);
+            }
+
+            // 3. Package Name Alignment
+            // The URL must contain the package name to prevent hijacking.
+            // E.g., 'react' -> https://registry.npmjs.org/react/-/react-18.0.0.tgz
+            let name_encoded = urlencoding::encode(&name);
+            let name_encoded_scoped = name.replace('/', "%2f");
+            if !tarball_url.contains(&name) && !tarball_url.contains(name_encoded.as_ref()) && !tarball_url.contains(&name_encoded_scoped) {
+                anyhow::bail!(
+                    "Lockfile injection detected! The resolved URL for '{}' does not appear to contain the package name. URL: {}",
+                    name, tarball_url
+                );
+            }
+
+            // 4. Integrity Validation
+            let shasum = &pkg_data.resolution.shasum;
+            if shasum.is_empty() {
+                anyhow::bail!(
+                    "Lockfile injection detected! Package '{}' is missing an integrity hash (shasum).",
+                    name
+                );
+            }
+            if shasum.len() < 40 {
+                anyhow::bail!(
+                    "Lockfile injection detected! Package '{}' has a suspiciously short integrity hash: {}",
+                    name, shasum
+                );
+            }
+        }
+
+        Ok(())
     }
 }
 

@@ -107,6 +107,32 @@ enum Commands {
     },
     #[command(external_subcommand)]
     External(Vec<String>),
+    #[command(about = "Symlink a local package into the project for development")]
+    Link {
+        path: String,
+    },
+    #[command(alias = "audit-fix")]
+    #[command(about = "Automatically fix known vulnerabilities by upgrading affected packages")]
+    AuditFix,
+    #[command(about = "Run a script defined in package.json (interactive if no script specified)")]
+    Run {
+        script: Option<String>,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    #[command(about = "Manage Kumo Shield security state")]
+    Shield {
+        #[command(subcommand)]
+        action: commands::shield::ShieldAction,
+    },
+    #[command(about = "Unlock a Kumo Shield protected file for manual editing")]
+    Unlock {
+        file: String,
+    },
+    #[command(about = "Re-lock a previously unlocked file under Kumo Shield")]
+    Lock {
+        file: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -123,6 +149,11 @@ pub enum TsSubcommand {
     },
     #[command(about = "Initialize a new TypeScript project (tsc --init)")]
     Init,
+    #[command(about = "Type-check the project without emitting files (tsc --noEmit)")]
+    Check {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -238,6 +269,9 @@ async fn main() -> Result<()> {
                 TsSubcommand::Init => {
                     cmd.arg("-p").arg("typescript").arg("tsc").arg("--init");
                 }
+                TsSubcommand::Check { args } => {
+                    cmd.arg("-p").arg("typescript").arg("tsc").arg("--noEmit").args(args);
+                }
             }
             
             let status = cmd.status()?;
@@ -252,6 +286,28 @@ async fn main() -> Result<()> {
             let script_name = &args[0];
             let script_args = &args[1..];
             commands::run::execute(script_name, script_args.to_vec()).await?;
+        }
+        Commands::Link { path } => {
+            commands::link::execute(path).await?;
+        }
+        Commands::AuditFix => {
+            commands::audit_fix::execute(&security).await?;
+        }
+        Commands::Run { script, args } => {
+            if let Some(s) = script {
+                commands::run::execute(&s, args).await?;
+            } else {
+                commands::run::execute_interactive().await?;
+            }
+        }
+        Commands::Shield { action } => {
+            commands::shield::execute(action).await?;
+        }
+        Commands::Unlock { file } => {
+            commands::unlock::execute(file).await?;
+        }
+        Commands::Lock { file } => {
+            commands::lock::execute(file).await?;
         }
     }
 

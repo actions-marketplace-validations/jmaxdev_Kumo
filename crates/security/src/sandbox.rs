@@ -9,25 +9,48 @@ pub struct SandboxConfig {
 pub struct SandboxRunner;
 
 impl SandboxRunner {
-    pub fn create_command(pkg_dir: &Path, script: &str, allow_network: bool) -> Command {
+    pub fn create_command(pkg_dir: &Path, script: &str, allow_network: bool, proxy_port: Option<u16>) -> Command {
         #[cfg(target_os = "linux")]
         {
-            Self::create_linux(pkg_dir, script, allow_network)
+            Self::create_linux(pkg_dir, script, allow_network, proxy_port)
         }
 
         #[cfg(target_os = "macos")]
         {
-            Self::create_macos(pkg_dir, script, allow_network)
+            Self::create_macos(pkg_dir, script, allow_network, proxy_port)
         }
 
         #[cfg(target_os = "windows")]
         {
-            Self::create_windows(pkg_dir, script, allow_network)
+            Self::create_windows(pkg_dir, script, allow_network, proxy_port)
         }
 
         #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         {
-            Self::create_fallback(pkg_dir, script, allow_network)
+            Self::create_fallback(pkg_dir, script, allow_network, proxy_port)
+        }
+    }
+
+    pub fn execute_command(cmd: &mut Command) -> std::io::Result<std::process::ExitStatus> {
+        #[cfg(target_os = "windows")]
+        {
+            let mut child = cmd.spawn()?;
+            if let Ok(job) = win32job::Job::create() {
+                let mut info = job.query_extended_limit_info().unwrap_or_default();
+                let _ = info.limit_working_memory(0, 512 * 1024 * 1024);
+                let _ = job.set_extended_limit_info(&mut info);
+                
+                use std::os::windows::io::AsRawHandle;
+                let handle = child.as_raw_handle();
+                let _ = job.assign_process(handle as isize);
+                
+                return child.wait();
+            }
+            child.wait()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            cmd.status()
         }
     }
 
@@ -63,7 +86,7 @@ impl SandboxRunner {
     }
 
     #[cfg(target_os = "linux")]
-    fn create_linux(pkg_dir: &Path, script: &str, allow_network: bool) -> Command {
+    fn create_linux(pkg_dir: &Path, script: &str, allow_network: bool, proxy_port: Option<u16>) -> Command {
         let has_bwrap = Command::new("which")
             .arg("bwrap")
             .status()
@@ -71,13 +94,19 @@ impl SandboxRunner {
             .unwrap_or(false);
 
         if !has_bwrap {
-            return Self::create_fallback(pkg_dir, script, allow_network);
+            return Self::create_fallback(pkg_dir, script, allow_network, proxy_port);
         }
 
         let mut cmd = Command::new("bwrap");
         cmd.arg("--unshare-all");
         if !allow_network {
-            cmd.arg("--unshare-net");
+            if let Some(port) = proxy_port {
+                cmd.env("HTTP_PROXY", format!("http://127.0.0.1:{}", port));
+                cmd.env("HTTPS_PROXY", format!("http://127.0.0.1:{}", port));
+                cmd.env("NODE_TLS_REJECT_UNAUTHORIZED", "0");
+            } else {
+                cmd.arg("--unshare-net");
+            }
         }
 
         cmd.arg("--ro-bind").arg("/usr").arg("/usr")
@@ -100,12 +129,15 @@ impl SandboxRunner {
     }
 
     #[cfg(target_os = "macos")]
-    fn create_macos(pkg_dir: &Path, script: &str, allow_network: bool) -> Command {
+    fn create_macos(pkg_dir: &Path, script: &str, allow_network: bool, proxy_port: Option<u16>) -> Command {
         let mut cmd = Command::new("sandbox-exec");
         let network_rule = if allow_network {
-            "(allow network*)"
+            "(allow network*)".to_string()
+        } else if let Some(port) = proxy_port {
+            // Allow connections to the local proxy port
+            format!(r#"(allow network-outbound (local ip "127.0.0.1:{}"))"#, port)
         } else {
-            "(deny network*)"
+            "(deny network*)".to_string()
         };
 
         let profile = format!(
@@ -133,7 +165,7 @@ impl SandboxRunner {
     }
 
     #[cfg(target_os = "windows")]
-    fn create_windows(pkg_dir: &Path, script: &str, allow_network: bool) -> Command {
+    fn create_windows(pkg_dir: &Path, script: &str, allow_network: bool, proxy_port: Option<u16>) -> Command {
         let mut cmd = Command::new("cmd");
         cmd.arg("/c").arg(script);
         cmd.current_dir(pkg_dir);
@@ -141,17 +173,17 @@ impl SandboxRunner {
         Self::setup_env(&mut cmd, pkg_dir);
 
         if !allow_network {
-            cmd.env("HTTP_PROXY", "http://127.0.0.1:9999");
-            cmd.env("HTTPS_PROXY", "http://127.0.0.1:9999");
+            let port = proxy_port.unwrap_or(9999);
+            cmd.env("HTTP_PROXY", format!("http://127.0.0.1:{}", port));
+            cmd.env("HTTPS_PROXY", format!("http://127.0.0.1:{}", port));
             cmd.env("NODE_TLS_REJECT_UNAUTHORIZED", "0");
         }
 
         cmd
     }
 
-
     #[allow(dead_code)]
-    fn create_fallback(pkg_dir: &Path, script: &str, allow_network: bool) -> Command {
+    fn create_fallback(pkg_dir: &Path, script: &str, allow_network: bool, proxy_port: Option<u16>) -> Command {
         let mut cmd = if cfg!(windows) {
             let mut c = Command::new("cmd");
             c.arg("/c").arg(script);
@@ -166,8 +198,9 @@ impl SandboxRunner {
         Self::setup_env(&mut cmd, pkg_dir);
 
         if !allow_network {
-            cmd.env("HTTP_PROXY", "http://127.0.0.1:9999");
-            cmd.env("HTTPS_PROXY", "http://127.0.0.1:9999");
+            let port = proxy_port.unwrap_or(9999);
+            cmd.env("HTTP_PROXY", format!("http://127.0.0.1:{}", port));
+            cmd.env("HTTPS_PROXY", format!("http://127.0.0.1:{}", port));
             cmd.env("NODE_TLS_REJECT_UNAUTHORIZED", "0");
         }
 

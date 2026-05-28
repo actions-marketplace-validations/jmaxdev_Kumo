@@ -10,5 +10,15 @@ anyhow = "1.0"
 serde_yml = "0.0.12"
 chrono = { version = "0.4", features = ["serde"] }
 serde_json = "1.0"
+dirs = "6.0"
+regex = "1.12"
+tokio = { version = "1.52", features = ["full"] }
+url = "2.5"
+urlencoding = "2.1"
+resolver = { path = "../resolver" }
+
+[target.'cfg(windows)'.dependencies]
+win32job = "2.0"
 
 blake3 = "1.8"
+

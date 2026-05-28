@@ -81,3 +81,28 @@ Security policy violation: Strict trust policy is active, and package 'some-pack
 ```
 
 You can bypass false positives via `trust_policy_exclude` or by using `trust_policy_ignore_after` (which automatically ignores checks on releases published more than X minutes ago).
+
+### 7. Kumo Shield (File System Protection)
+
+Malware often tries to modify existing dependencies, configuration files, or cache objects silently in the background. **Kumo Shield** provides an immutable layer of defense by utilizing native OS read-only attributes.
+
+To enable Kumo Shield:
+```bash
+kumo shield on
+```
+
+When active, Kumo Shield enforces the following protections:
+1. **Global Cache Protection:** Every package extracted into `~/.kumo/store/objects` is marked as **Read-Only**. Because Kumo uses hardlinks to copy files into your project's `dependencies/` folder by default, these files will also be immutable across all your local projects. This completely breaks any script attempting to modify its own or other packages' source code.
+2. **Configuration Protection:** `kumo.config.json` (both global and local) and `kumo.lock` are automatically marked as Read-Only immediately after Kumo finishes modifying them.
+
+#### The "Armored Door" (TTY-Gated Unlock)
+
+If you need to manually edit your configuration files while the shield is active, you cannot simply open them in your code editor (they are read-only). You must explicitly unlock them using:
+
+```bash
+kumo unlock kumo.config.json
+```
+
+**The Anti-Malware Trap:** Automated scripts and malware operate in the background without a real terminal (TTY). The `unlock` command checks for a genuine interactive terminal session and requires human confirmation (`Are you sure you want to unlock...? (y/N)`). If a script attempts to pipe input (e.g. `echo "y" | kumo unlock ...`), Kumo will detect the lack of a real TTY and immediately reject the request.
+
+Once you have finished editing, simply run `kumo lock` or execute any Kumo installation command to automatically re-seal the files.

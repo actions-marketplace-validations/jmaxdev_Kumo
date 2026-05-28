@@ -45,8 +45,13 @@ pub async fn init_components() -> Result<(Store, SecurityEngine, Resolver)> {
 
     let policy: Policy = serde_json::from_value(config_json)?;
 
-    let security = SecurityEngine::new(policy);
+    let mut security = SecurityEngine::new(policy);
     let resolver = Resolver::new();
+
+    tokio::spawn(async move {});
+    {
+        let _ = security.refresh_popular_packages().await;
+    }
 
     Ok((store, security, resolver))
 }

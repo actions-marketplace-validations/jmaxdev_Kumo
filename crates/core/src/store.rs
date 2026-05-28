@@ -4,14 +4,20 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 
+use crate::shield::ShieldManager;
+
 #[derive(Clone)]
 pub struct Store {
     root: PathBuf,
+    shield: ShieldManager,
 }
 
 impl Store {
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self { 
+            root,
+            shield: ShieldManager::new(),
+        }
     }
 
     pub fn get_root(&self) -> &Path {
@@ -45,6 +51,10 @@ impl Store {
                 if !path.exists() {
                     return Err(e.into());
                 }
+            }
+
+            if self.shield.is_active() {
+                let _ = self.shield.shield_file(&path);
             }
         }
 
@@ -111,6 +121,7 @@ impl Store {
                     let full_hash = format!("{}{}", prefix, hash_suffix);
 
                     if !referenced_hashes.contains(&full_hash) {
+                        let _ = self.shield.unshield_file(&obj_entry.path());
                         fs::remove_file(obj_entry.path()).await?;
                         deleted_count += 1;
                     }

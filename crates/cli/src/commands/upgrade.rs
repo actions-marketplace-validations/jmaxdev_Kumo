@@ -1,4 +1,5 @@
 use anyhow::Result;
+use kumo_core::shield::ShieldManager;
 use kumo_core::Store;
 use resolver::Resolver;
 use security::SecurityEngine;
@@ -351,6 +352,10 @@ pub async fn execute(
     }
 
     let json = serde_json::to_string_pretty(&config_content)?;
+    let shield = ShieldManager::new();
+    if shield.is_active() {
+        let _ = shield.unshield_file(&config_path);
+    }
     std::fs::write(&config_path, &json)?;
 
     println!(

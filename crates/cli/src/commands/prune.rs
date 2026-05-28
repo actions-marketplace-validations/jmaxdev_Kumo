@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Subcommand;
 use kumo_core::Store;
+use kumo_core::shield::ShieldManager;
 
 #[derive(Subcommand)]
 pub enum PruneSubcommand {
@@ -26,12 +27,15 @@ pub async fn execute(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
                 let root = store.get_root();
                 let metadata_dir = root.join("metadata");
                 let objects_dir = root.join("objects");
+                let shield = ShieldManager::new();
 
                 if metadata_dir.exists() {
+                    let _ = shield.unshield_dir_recursive(&metadata_dir);
                     let _ = std::fs::remove_dir_all(&metadata_dir);
                     let _ = std::fs::create_dir_all(&metadata_dir);
                 }
                 if objects_dir.exists() {
+                    let _ = shield.unshield_dir_recursive(&objects_dir);
                     let _ = std::fs::remove_dir_all(&objects_dir);
                     let _ = std::fs::create_dir_all(&objects_dir);
                 }
@@ -52,6 +56,8 @@ pub async fn execute(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
             if full {
                 let lock_path = std::env::current_dir()?.join("kumo.lock");
                 if lock_path.exists() {
+                    let shield = ShieldManager::new();
+                    let _ = shield.unshield_file(&lock_path);
                     std::fs::remove_file(lock_path)?;
                     println!("Deleted kumo.lock");
                 }
