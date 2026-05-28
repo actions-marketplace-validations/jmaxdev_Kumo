@@ -32,7 +32,8 @@ pub async fn execute(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
             prune_cache().await?;
         }
         PruneSubcommand::Deps { full, remove_all, path } => {
-            prune_deps(*full, *remove_all, path.clone()).await?;
+
+            prune_deps(full, remove_all, path).await?;
         }
         PruneSubcommand::All => {
             prune_store(store).await?;
@@ -189,3 +190,9 @@ async fn prune_deps(full: bool, remove_all: bool, path: Option<String>) -> Resul
                 let shield = ShieldManager::new();
                 let _ = shield.unshield_file(&lock_path);
                 std::fs::remove_file(lock_path)?;
+            }
+        }
+    }
+
+    Ok(())
+}
