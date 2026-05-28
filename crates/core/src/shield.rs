@@ -113,4 +113,34 @@ impl ShieldManager {
         
         Ok(())
     }
+
+    pub fn shield_dir_recursive(&self, path: &Path) -> Result<()> {
+        if !path.exists() {
+            return Ok(());
+        }
+        
+        let metadata = fs::symlink_metadata(path)?;
+        let mut perms = metadata.permissions();
+        if !perms.readonly() {
+            perms.set_readonly(true);
+            let _ = fs::set_permissions(path, perms);
+        }
+
+        if path.is_dir() {
+            for entry in walkdir::WalkDir::new(path).min_depth(1) {
+                if let Ok(entry) = entry {
+                    let entry_path = entry.path();
+                    if let Ok(meta) = fs::symlink_metadata(entry_path) {
+                        let mut p = meta.permissions();
+                        if !p.readonly() {
+                            p.set_readonly(true);
+                            let _ = fs::set_permissions(entry_path, p);
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
 }

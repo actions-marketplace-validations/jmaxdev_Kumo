@@ -419,7 +419,14 @@ impl Resolver {
                         .await
                         .with_context(|| format!("Failed to parse metadata for {}", name))?;
                     let json = serde_json::to_string(&metadata)?;
+                    let shield = kumo_core::shield::ShieldManager::new();
+                    if shield.is_active() {
+                        let _ = shield.unshield_file(cache_path);
+                    }
                     let _ = std::fs::write(cache_path, json);
+                    if shield.is_active() {
+                        let _ = shield.shield_file(cache_path);
+                    }
                     return Ok(metadata);
                 }
                 Err(e) => {

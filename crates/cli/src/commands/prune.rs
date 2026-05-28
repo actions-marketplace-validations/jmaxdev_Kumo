@@ -101,11 +101,14 @@ async fn prune_cache() -> Result<()> {
         return Ok(());
     }
 
+    let shield = ShieldManager::new();
     if metadata_dir.exists() {
+        let _ = shield.unshield_dir_recursive(&metadata_dir);
         std::fs::remove_dir_all(&metadata_dir)?;
         std::fs::create_dir_all(&metadata_dir)?;
     }
     if scripts_dir.exists() {
+        let _ = shield.unshield_dir_recursive(&scripts_dir);
         std::fs::remove_dir_all(&scripts_dir)?;
         std::fs::create_dir_all(&scripts_dir)?;
     }

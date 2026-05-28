@@ -20,7 +20,35 @@ pub async fn execute(action: ShieldAction) -> Result<()> {
             shield.set_active(true)?;
             
             println!("🛡️  Kumo Shield activated!");
-            println!("New packages added to the cache will be marked as Read-Only.");
+            
+            // Retroactively shield the global store and cache
+            let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+            let objects_dir = home.join(".kumo").join("store").join("objects");
+            let metadata_dir = home.join(".kumo").join("store").join("metadata");
+            let cache_dir = home.join(".kumo").join("cache");
+
+            println!("Applying protection to existing cached packages and metadata...");
+            if objects_dir.exists() {
+                let _ = shield.shield_dir_recursive(&objects_dir);
+            }
+            if metadata_dir.exists() {
+                let _ = shield.shield_dir_recursive(&metadata_dir);
+            }
+            if cache_dir.exists() {
+                let _ = shield.shield_dir_recursive(&cache_dir);
+            }
+
+            // Retroactively shield local project files
+            if let Ok(cwd) = std::env::current_dir() {
+                for file in ["kumo.lock", "kumo.json", "kumo.config.json"] {
+                    let path = cwd.join(file);
+                    if path.exists() {
+                        let _ = shield.shield_file(&path);
+                    }
+                }
+            }
+
+            println!("Existing and new packages in the cache are now marked as Read-Only.");
             println!("To edit kumo.config.json or kumo.lock, use 'kumo unlock <file>'.");
         }
         ShieldAction::Off => {

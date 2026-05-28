@@ -81,9 +81,16 @@ impl Store {
     pub async fn save_index(&self, key: &str, file_map: &HashMap<String, String>) -> Result<()> {
         let path = self.get_index_path(key);
         let json = serde_json::to_string(file_map)?;
-        fs::write(path, json)
+        if self.shield.is_active() {
+            let _ = self.shield.unshield_file(&path);
+        }
+        let result = fs::write(&path, json)
             .await
-            .context("Failed to save package index")
+            .context("Failed to save package index");
+        if self.shield.is_active() {
+            let _ = self.shield.shield_file(&path);
+        }
+        result
     }
 
     pub async fn load_index(&self, key: &str) -> Result<Option<HashMap<String, String>>> {
