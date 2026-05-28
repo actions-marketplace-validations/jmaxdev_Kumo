@@ -6,7 +6,7 @@ pub async fn execute(pkg_name: String) -> Result<()> {
     let link_target = std::env::current_dir()?.join(&deps_dir).join(pkg_name.replace('/', std::path::MAIN_SEPARATOR_STR));
 
     if !link_target.exists() {
-        anyhow::bail!("Package '{}' is not linked (or does not exist in {}).", pkg_name, deps_dir.display());
+        anyhow::bail!("Package '{}' is not linked (or does not exist in {}).", pkg_name, deps_dir);
     }
 
     let meta = std::fs::symlink_metadata(&link_target)?;
