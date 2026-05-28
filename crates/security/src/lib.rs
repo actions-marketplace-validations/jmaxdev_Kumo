@@ -269,6 +269,10 @@ impl SecurityEngine {
         published_at: Option<&str>,
         has_install_scripts: bool,
     ) -> Result<bool> {
+        if self.policy.trusted_packages.contains(name) {
+            return Ok(true);
+        }
+
         if self.policy.blocked_packages.contains(name) {
             return Ok(false);
         }
@@ -338,7 +342,11 @@ impl SecurityEngine {
             name
         };
 
-        if self.policy.protected_packages.contains(name_normalized) || existing_deps.contains(name) || self.popular_packages.contains(name) {
+        if self.policy.trusted_packages.contains(name)
+            || self.policy.protected_packages.contains(name_normalized)
+            || existing_deps.contains(name)
+            || self.popular_packages.contains(name)
+        {
             return None;
         }
 
@@ -483,20 +491,43 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
 }
 
 fn is_suspiciously_similar(a: &str, b: &str) -> bool {
+    let len_a = a.chars().count();
+    let len_b = b.chars().count();
+    let min_len = std::cmp::min(len_a, len_b);
+    let max_len = std::cmp::max(len_a, len_b);
+
+    // Names ≤ 3 chars are too short for meaningful typosquatting detection
+    if min_len <= 3 {
+        return false;
+    }
+
+    // If length difference is too large, it's not typosquatting
+    if max_len - min_len > 2 {
+        return false;
+    }
+
+    // If one name is a prefix/suffix of the other with a separator, it's a variant
+    // e.g. "lodash" and "lodash-es", "react" and "react-dom"
+    if a.starts_with(b) || b.starts_with(a) {
+        let longer = if len_a > len_b { a } else { b };
+        let shorter = if len_a > len_b { b } else { a };
+        let suffix = &longer[shorter.len()..];
+        if suffix.starts_with('-') || suffix.starts_with('_') || suffix.starts_with('.') {
+            return false;
+        }
+    }
+
     let dist = levenshtein_distance(a, b);
     if dist == 0 {
         return false;
     }
 
-    let len_a = a.chars().count();
-    let len_b = b.chars().count();
-    let max_len = std::cmp::max(len_a, len_b);
-
-    if max_len <= 4 {
+    // Tighter thresholds to reduce false positives
+    if max_len <= 5 {
         dist == 1
-    } else if max_len <= 8 {
-        dist <= 2
+    } else if max_len <= 10 {
+        dist <= 1
     } else {
-        dist <= 3
+        dist <= 2
     }
 }

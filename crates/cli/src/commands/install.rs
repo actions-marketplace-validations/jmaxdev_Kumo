@@ -212,8 +212,8 @@ pub async fn resolve_and_install(
         let show_logs = show_logs;
 
         async move {
-            let (name, version) = common::parse_package_id(&key);
-            let name = name.replace('/', std::path::MAIN_SEPARATOR_STR);
+            let (pkg_name, version) = common::parse_package_id(&key);
+            let name = pkg_name.replace('/', std::path::MAIN_SEPARATOR_STR);
 
             let pb = if show_logs {
                 let pb =
@@ -274,7 +274,7 @@ pub async fn resolve_and_install(
             });
 
             let is_safe = security
-                .validate_package(&name, &version, None, false, None, has_scripts)
+                .validate_package(&pkg_name, &version, None, false, None, has_scripts)
                 .await?;
 
             if !is_safe {
