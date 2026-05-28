@@ -14,6 +14,8 @@ pub enum PruneSubcommand {
     Deps {
         #[arg(long, help = "Also delete kumo.lock")]
         full: bool,
+        #[arg(long, help = "Recursively find and remove all dependency directories in subdirectories")]
+        remove_all: bool,
     },
     #[command(about = "Clean both the global store and the registry cache")]
     All,
@@ -27,8 +29,8 @@ pub async fn execute(store: &Store, subcommand: PruneSubcommand) -> Result<()> {
         PruneSubcommand::Cache => {
             prune_cache().await?;
         }
-        PruneSubcommand::Deps { full } => {
-            prune_deps(full).await?;
+        PruneSubcommand::Deps { full, remove_all } => {
+            prune_deps(full, remove_all).await?;
         }
         PruneSubcommand::All => {
             prune_store(store).await?;
@@ -125,20 +127,64 @@ async fn prune_cache() -> Result<()> {
     Ok(())
 }
 
-async fn prune_deps(full: bool) -> Result<()> {
+async fn prune_deps(full: bool, remove_all: bool) -> Result<()> {
     let deps_dir = crate::common::get_deps_dir();
-    println!("Pruning {} directory...", deps_dir);
-    if std::path::Path::new(&deps_dir).exists() {
-        std::fs::remove_dir_all(&deps_dir)?;
-        println!("Deleted local {} directory.", deps_dir);
-    }
-    if full {
-        let lock_path = std::env::current_dir()?.join("kumo.lock");
-        if lock_path.exists() {
-            let shield = ShieldManager::new();
-            let _ = shield.unshield_file(&lock_path);
-            std::fs::remove_file(lock_path)?;
-            println!("Deleted kumo.lock");
+    let current_dir = std::env::current_dir()?;
+
+    if remove_all {
+        println!("Searching for dependency directories to remove recursively...");
+        
+        fn find_and_remove(dir: &std::path::Path, deps_name: &str, full: bool, count: &mut u64) {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        if let Some(name) = path.file_name() {
+                            let name_str = name.to_string_lossy();
+                            if name_str == "node_modules" || name_str == "dependencies" || name_str == deps_name {
+                                println!("Deleting {}...", path.display());
+                                if std::fs::remove_dir_all(&path).is_ok() {
+                                    *count += 1;
+                                }
+                            } else if name_str != ".git" && name_str != ".kumo" && name_str != "target" {
+                                find_and_remove(&path, deps_name, full, count);
+                            }
+                        }
+                    } else if path.is_file() && full {
+                        if let Some(name) = path.file_name() {
+                            if name == "kumo.lock" {
+                                println!("Deleting {}...", path.display());
+                                let shield = ShieldManager::new();
+                                let _ = shield.unshield_file(&path);
+                                if std::fs::remove_file(&path).is_ok() {
+                                    *count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut count = 0;
+        find_and_remove(&current_dir, &deps_dir, full, &mut count);
+        
+        println!("Removed {} items in total.", count);
+    } else {
+        println!("Pruning {} directory...", deps_dir);
+        let deps_path = current_dir.join(&deps_dir);
+        if deps_path.exists() {
+            std::fs::remove_dir_all(&deps_path)?;
+            println!("Deleted local {} directory.", deps_dir);
+        }
+        if full {
+            let lock_path = current_dir.join("kumo.lock");
+            if lock_path.exists() {
+                let shield = ShieldManager::new();
+                let _ = shield.unshield_file(&lock_path);
+                std::fs::remove_file(lock_path)?;
+                println!("Deleted kumo.lock");
+            }
         }
     }
     Ok(())
