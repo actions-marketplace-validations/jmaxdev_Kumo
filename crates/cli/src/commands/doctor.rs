@@ -69,7 +69,7 @@ pub async fn execute(store: &Store) -> Result<()> {
             );
         } else {
             println!(
-                "  \x1b[31m✗\x1b[0m {}/{} objects are corrupted! Run 'kumo prune cache --full' and reinstall.",
+                "  \x1b[31m✗\x1b[0m {}/{} objects are corrupted! Run 'kumo prune store' and reinstall.",
                 corrupted, total
             );
             issues += corrupted as usize;

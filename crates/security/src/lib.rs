@@ -398,7 +398,7 @@ impl SecurityEngine {
             };
 
             let tarball_url = &pkg_data.resolution.tarball;
-            
+
             // 1. HTTPS Enforcement
             if !tarball_url.starts_with("https://") && !tarball_url.starts_with("git+https://") && !tarball_url.starts_with("git+ssh://") {
                 anyhow::bail!(
