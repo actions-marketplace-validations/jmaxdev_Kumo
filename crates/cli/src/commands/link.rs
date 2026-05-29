@@ -1,6 +1,18 @@
 use anyhow::Result;
 use crate::common;
 
+#[derive(clap::Args)]
+pub struct LinkCommand {
+    pub path: String,
+}
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for LinkCommand {
+    async fn run(&self, _ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute(self.path.clone()).await
+    }
+}
+
 pub async fn execute(path: String) -> Result<()> {
     let source = std::path::Path::new(&path);
     let source = if source.is_relative() {

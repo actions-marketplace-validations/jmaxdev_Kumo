@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Subcommand;
 use kumo_core::shield::ShieldManager;
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone)]
 pub enum ShieldAction {
     #[command(about = "Enable Kumo Shield to protect dependencies from unauthorized modification")]
     On,
@@ -10,6 +10,19 @@ pub enum ShieldAction {
     Off,
     #[command(about = "Check current Kumo Shield status")]
     Status,
+}
+
+#[derive(clap::Args)]
+pub struct ShieldCommand {
+    #[command(subcommand)]
+    pub action: ShieldAction,
+}
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for ShieldCommand {
+    async fn run(&self, _ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute(self.action.clone()).await
+    }
 }
 
 pub async fn execute(action: ShieldAction) -> Result<()> {

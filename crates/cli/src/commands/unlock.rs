@@ -3,6 +3,18 @@ use dialoguer::Confirm;
 use kumo_core::shield::ShieldManager;
 use std::path::{Path, PathBuf};
 
+#[derive(clap::Args)]
+pub struct UnlockCommand {
+    pub file: String,
+}
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for UnlockCommand {
+    async fn run(&self, _ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute(self.file.clone()).await
+    }
+}
+
 pub async fn execute(file: String) -> Result<()> {
     let shield = ShieldManager::new();
     

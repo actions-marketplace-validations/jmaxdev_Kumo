@@ -2,6 +2,16 @@ use anyhow::Result;
 use resolver::Lockfile;
 use security::SecurityEngine;
 
+#[derive(clap::Args)]
+pub struct AuditFixCommand;
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for AuditFixCommand {
+    async fn run(&self, ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute(&ctx.security).await
+    }
+}
+
 pub async fn execute(security: &SecurityEngine) -> Result<()> {
     println!("Scanning for fixable vulnerabilities...");
     let lock_path = std::env::current_dir()?.join("kumo.lock");

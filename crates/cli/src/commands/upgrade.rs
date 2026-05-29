@@ -5,6 +5,31 @@ use resolver::Resolver;
 use security::SecurityEngine;
 use std::collections::HashMap;
 
+#[derive(clap::Args)]
+pub struct UpgradeCommand {
+    pub packages: Vec<String>,
+    #[arg(short = 'L', long)]
+    pub latest: bool,
+    #[arg(long)]
+    pub prod: bool,
+    #[arg(long)]
+    pub dev: bool,
+    #[arg(short = 'F', long)]
+    pub fixed: bool,
+    #[arg(short = 'n', long)]
+    pub dry_run: bool,
+    #[arg(long)]
+    pub log: bool,
+}
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for UpgradeCommand {
+    async fn run(&self, ctx: &super::CommandContext) -> anyhow::Result<()> {
+        let config_path = ctx.config_path.clone().ok_or_else(|| anyhow::anyhow!("Neither kumo.json nor package.json found in current directory"))?;
+        execute(&ctx.store, &ctx.resolver, &ctx.security, self.packages.clone(), self.latest, self.prod, self.dev, self.fixed, self.dry_run, self.log, config_path).await
+    }
+}
+
 struct UpgradeCandidate {
     name: String,
     current_version: String,

@@ -1,6 +1,16 @@
 use anyhow::Result;
 use resolver::Lockfile;
 
+#[derive(clap::Args)]
+pub struct GraphCommand;
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for GraphCommand {
+    async fn run(&self, _ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute().await
+    }
+}
+
 pub async fn execute() -> Result<()> {
     let lock_path = std::env::current_dir()?.join("kumo.lock");
     if !lock_path.exists() {

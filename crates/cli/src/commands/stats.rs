@@ -1,6 +1,16 @@
 use anyhow::Result;
 use kumo_core::Store;
 
+#[derive(clap::Args)]
+pub struct StatsCommand;
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for StatsCommand {
+    async fn run(&self, ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute(&ctx.store).await
+    }
+}
+
 pub async fn execute(store: &Store) -> Result<()> {
     let root = store.get_root();
     let objects_dir = root.join("objects");

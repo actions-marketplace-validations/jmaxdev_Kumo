@@ -1,6 +1,16 @@
 use anyhow::Result;
 use resolver::Lockfile;
 
+#[derive(clap::Args)]
+pub struct TimelineCommand;
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for TimelineCommand {
+    async fn run(&self, _ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute().await
+    }
+}
+
 pub async fn execute() -> Result<()> {
     let lock_path = std::env::current_dir()?.join("kumo.lock");
     if let Ok(metadata) = std::fs::metadata(&lock_path) {

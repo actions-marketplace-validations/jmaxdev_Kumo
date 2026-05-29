@@ -4,7 +4,7 @@ use kumo_core::Store;
 use kumo_core::shield::ShieldManager;
 use std::path::PathBuf;
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone)]
 pub enum PruneSubcommand {
     #[command(about = "Clean the global content-addressable store (~/.kumo/store)")]
     Store,
@@ -21,6 +21,19 @@ pub enum PruneSubcommand {
     },
     #[command(about = "Clean both the global store and the registry cache")]
     All,
+}
+
+#[derive(clap::Args)]
+pub struct PruneCommand {
+    #[command(subcommand)]
+    pub subcommand: PruneSubcommand,
+}
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for PruneCommand {
+    async fn run(&self, ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute(&ctx.store, self.subcommand.clone()).await
+    }
 }
 
 pub async fn execute(store: &Store, subcommand: PruneSubcommand) -> Result<()> {

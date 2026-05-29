@@ -5,6 +5,24 @@ use resolver::Resolver;
 use security::SecurityEngine;
 use std::collections::HashMap;
 
+#[derive(clap::Args)]
+pub struct AddCommand {
+    pub name: String,
+    #[arg(short, long)]
+    pub dev: bool,
+    #[arg(short, long)]
+    pub global: bool,
+    #[arg(long)]
+    pub log: bool,
+}
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for AddCommand {
+    async fn run(&self, ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute(&ctx.store, &ctx.resolver, &ctx.security, self.name.clone(), self.dev, self.global, self.log, ctx.config_path.clone()).await
+    }
+}
+
 pub async fn execute(
     store: &Store,
     resolver: &Resolver,

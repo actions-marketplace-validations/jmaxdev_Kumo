@@ -6,6 +6,18 @@ use security::SecurityEngine;
 use std::collections::HashMap;
 use crate::common;
 
+#[derive(clap::Args)]
+pub struct RemoveCommand {
+    pub name: String,
+}
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for RemoveCommand {
+    async fn run(&self, ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute(&ctx.store, &ctx.resolver, &ctx.security, self.name.clone(), ctx.config_path.clone()).await
+    }
+}
+
 pub async fn execute(
     store: &Store,
     resolver: &Resolver,

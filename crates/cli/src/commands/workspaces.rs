@@ -1,5 +1,15 @@
 use anyhow::Result;
 
+#[derive(clap::Args)]
+pub struct WorkspacesCommand;
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for WorkspacesCommand {
+    async fn run(&self, _ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute().await
+    }
+}
+
 pub async fn execute() -> Result<()> {
     println!("Kumo Workspaces: Detecting local packages...");
     let mut found = 0;

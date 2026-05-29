@@ -1,5 +1,23 @@
 use anyhow::Result;
 
+#[derive(clap::Args)]
+pub struct RunCommand {
+    pub script: Option<String>,
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    pub args: Vec<String>,
+}
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for RunCommand {
+    async fn run(&self, _ctx: &super::CommandContext) -> anyhow::Result<()> {
+        if let Some(s) = &self.script {
+            execute(s, self.args.clone()).await
+        } else {
+            execute_interactive().await
+        }
+    }
+}
+
 pub async fn execute(name: &str, args: Vec<String>) -> Result<()> {
     let project_dir = std::env::current_dir()?;
     let config_path = project_dir.join("kumo.config.json");

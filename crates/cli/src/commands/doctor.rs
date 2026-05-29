@@ -1,6 +1,16 @@
 use anyhow::Result;
 use kumo_core::Store;
 
+#[derive(clap::Args)]
+pub struct DoctorCommand;
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for DoctorCommand {
+    async fn run(&self, ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute(&ctx.store).await
+    }
+}
+
 pub async fn execute(store: &Store) -> Result<()> {
     println!("Kumo Doctor: Running health checks...\n");
     let mut issues = 0;

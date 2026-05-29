@@ -1,5 +1,27 @@
 use anyhow::Result;
-use crate::ConfigSubcommand;
+use clap::Subcommand;
+
+#[derive(Subcommand, Clone)]
+pub enum ConfigSubcommand {
+    Init,
+    Default {
+        setting: String,
+        value: String,
+    },
+}
+
+#[derive(clap::Args)]
+pub struct ConfigCommand {
+    #[command(subcommand)]
+    pub subcommand: ConfigSubcommand,
+}
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for ConfigCommand {
+    async fn run(&self, _ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute(self.subcommand.clone()).await
+    }
+}
 
 pub async fn execute(subcommand: ConfigSubcommand) -> Result<()> {
     match subcommand {

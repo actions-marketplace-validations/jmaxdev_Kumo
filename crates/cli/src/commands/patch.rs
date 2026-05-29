@@ -1,6 +1,18 @@
 use anyhow::Result;
 use resolver::Lockfile;
 
+#[derive(clap::Args)]
+pub struct PatchCommand {
+    pub name: String,
+}
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for PatchCommand {
+    async fn run(&self, _ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute(self.name.clone()).await
+    }
+}
+
 pub async fn execute(name: String) -> Result<()> {
     println!("Patching package: {}...", name);
     let lock_path = std::env::current_dir()?.join("kumo.lock");

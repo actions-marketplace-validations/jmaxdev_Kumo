@@ -1,5 +1,19 @@
 use anyhow::Result;
 
+#[derive(clap::Args)]
+pub struct UpdateCommand {
+    #[arg(long)]
+    pub pre: bool,
+    pub version: Option<String>,
+}
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for UpdateCommand {
+    async fn run(&self, _ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute(self.pre, self.version.clone()).await
+    }
+}
+
 pub async fn execute(include_pre: bool, target_version: Option<String>) -> Result<()> {
     let current_version = env!("CARGO_PKG_VERSION");
 

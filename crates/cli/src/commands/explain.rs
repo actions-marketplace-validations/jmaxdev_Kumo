@@ -1,6 +1,18 @@
 use anyhow::Result;
 use resolver::Lockfile;
 
+#[derive(clap::Args)]
+pub struct ExplainCommand {
+    pub name: String,
+}
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for ExplainCommand {
+    async fn run(&self, _ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute(&self.name).await
+    }
+}
+
 pub async fn execute(name: &str) -> Result<()> {
     let lock_path = std::env::current_dir()?.join("kumo.lock");
     if !lock_path.exists() {

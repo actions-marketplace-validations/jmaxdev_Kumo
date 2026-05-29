@@ -2,6 +2,18 @@ use anyhow::Result;
 use kumo_core::shield::ShieldManager;
 use std::path::PathBuf;
 
+#[derive(clap::Args)]
+pub struct LockCommand {
+    pub file: Option<String>,
+}
+
+#[async_trait::async_trait(?Send)]
+impl super::Command for LockCommand {
+    async fn run(&self, _ctx: &super::CommandContext) -> anyhow::Result<()> {
+        execute(self.file.clone()).await
+    }
+}
+
 pub async fn execute(file: Option<String>) -> Result<()> {
     let shield = ShieldManager::new();
     
