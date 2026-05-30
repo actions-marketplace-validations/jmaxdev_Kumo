@@ -114,7 +114,25 @@ impl super::Command for TsCommand {
             }
         }
 
-        let status = cmd.status()?;
+        #[cfg(windows)]
+        {
+            extern "system" {
+                fn SetConsoleCtrlHandler(handler: usize, add: i32) -> i32;
+            }
+            unsafe { SetConsoleCtrlHandler(0, 1); }
+        }
+
+        let mut child = cmd.spawn()?;
+        let status = child.wait()?;
+
+        #[cfg(windows)]
+        {
+            extern "system" {
+                fn SetConsoleCtrlHandler(handler: usize, add: i32) -> i32;
+            }
+            unsafe { SetConsoleCtrlHandler(0, 0); }
+        }
+
         if !status.success() {
             std::process::exit(status.code().unwrap_or(1));
         }
