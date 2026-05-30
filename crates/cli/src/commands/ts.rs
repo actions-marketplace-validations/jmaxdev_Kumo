@@ -99,6 +99,14 @@ impl super::Command for TsCommand {
                     println!("tsconfig.json already exists. Updated Kumo types in .kumo/");
                 }
                 
+                let pkg_json_path = current_dir.join("package.json");
+                if !pkg_json_path.exists() {
+                    let pkg_json_content = r#"{
+  "type": "module"
+}"#;
+                    let _ = std::fs::write(&pkg_json_path, pkg_json_content);
+                }
+
                 return Ok(());
             }
             TsSubcommand::Check { args } => {
