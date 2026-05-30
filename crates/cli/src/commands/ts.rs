@@ -41,10 +41,65 @@ impl super::Command for TsCommand {
                 cmd.arg("-p").arg("typescript").arg("tsc").args(args);
             }
             TsSubcommand::Exec { args } => {
-                cmd.arg("tsx").args(args);
+                let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+                let kumo_dir = home.join(".kumo");
+                let lib_dir = kumo_dir.join("lib");
+                if !lib_dir.exists() {
+                    let _ = std::fs::create_dir_all(&lib_dir);
+                }
+                
+                let polyfill_path = lib_dir.join("api.mjs");
+                let polyfill_content = include_str!("../lib/api.mjs").replace("__KUMO_VERSION__", env!("CARGO_PKG_VERSION"));
+                let _ = std::fs::write(&polyfill_path, polyfill_content);
+
+                let dts_path = lib_dir.join("kumo.d.ts");
+                let dts_content = include_str!("../lib/kumo.d.ts");
+                let _ = std::fs::write(&dts_path, dts_content);
+
+                cmd.arg("tsx");
+                
+                if polyfill_path.exists() {
+                    let mut polyfill_url = polyfill_path.to_string_lossy().replace('\\', "/");
+                    if cfg!(windows) && !polyfill_url.starts_with('/') {
+                        polyfill_url = format!("/{}", polyfill_url);
+                    }
+                    cmd.arg("--import").arg(format!("file://{}", polyfill_url));
+                }
+                
+                cmd.args(args);
             }
             TsSubcommand::Init => {
-                cmd.arg("-p").arg("typescript").arg("tsc").arg("--init");
+                let current_dir = std::env::current_dir()?;
+                let dot_kumo_dir = current_dir.join(".kumo");
+                if !dot_kumo_dir.exists() {
+                    let _ = std::fs::create_dir_all(&dot_kumo_dir);
+                }
+
+                let dts_path = dot_kumo_dir.join("kumo.d.ts");
+                let dts_content = include_str!("../lib/kumo.d.ts");
+                let _ = std::fs::write(&dts_path, dts_content);
+
+                let tsconfig_path = current_dir.join("tsconfig.json");
+                if !tsconfig_path.exists() {
+                    let tsconfig_content = r#"{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["**/*.ts", ".kumo/**/*.d.ts"]
+}"#;
+                    let _ = std::fs::write(&tsconfig_path, tsconfig_content);
+                    println!("Initialized Kumo TypeScript project configuration.");
+                } else {
+                    println!("tsconfig.json already exists. Updated Kumo types in .kumo/");
+                }
+                
+                return Ok(());
             }
             TsSubcommand::Check { args } => {
                 cmd.arg("-p").arg("typescript").arg("tsc").arg("--noEmit").args(args);

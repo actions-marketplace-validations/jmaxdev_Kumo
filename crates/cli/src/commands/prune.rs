@@ -144,6 +144,10 @@ async fn prune_cache() -> Result<()> {
 }
 
 async fn prune_deps(full: bool, remove_all: bool, path: Option<String>) -> Result<()> {
+    use indicatif::{ProgressBar, ProgressStyle};
+    use rayon::prelude::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
     let deps_dir = crate::common::get_deps_dir();
     let current_dir = if let Some(p) = path {
         std::path::PathBuf::from(p)
@@ -152,9 +156,18 @@ async fn prune_deps(full: bool, remove_all: bool, path: Option<String>) -> Resul
     };
 
     if remove_all {
-        println!("Searching for dependency directories to remove recursively...");
+        let spinner = ProgressBar::new_spinner();
+        spinner.set_style(
+            ProgressStyle::default_spinner()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+                .template("{spinner:.green} {msg}")?,
+        );
+        spinner.set_message("Searching for dependency directories to remove...");
+        spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-        fn find_and_remove(dir: &std::path::Path, deps_name: &str, full: bool, count: &mut u64) {
+        let mut paths_to_delete = Vec::new();
+
+        fn find_targets(dir: &std::path::Path, deps_name: &str, full: bool, targets: &mut Vec<std::path::PathBuf>) {
             if let Ok(entries) = std::fs::read_dir(dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
@@ -162,23 +175,16 @@ async fn prune_deps(full: bool, remove_all: bool, path: Option<String>) -> Resul
                         if let Some(name) = path.file_name() {
                             let name_str = name.to_string_lossy();
                             if name_str == "node_modules" || name_str == "dependencies" || name_str == deps_name {
-                                println!("Deleting {}...", path.display());
-                                if std::fs::remove_dir_all(&path).is_ok() {
-                                    *count += 1;
-                                }
+                                targets.push(path);
+                                // Do not recurse inside a target we are going to delete
                             } else if name_str != ".git" && name_str != ".kumo" && name_str != "target" {
-                                find_and_remove(&path, deps_name, full, count);
+                                find_targets(&path, deps_name, full, targets);
                             }
                         }
                     } else if path.is_file() && full {
                         if let Some(name) = path.file_name() {
                             if name == "kumo.lock" {
-                                println!("Deleting {}...", path.display());
-                                let shield = ShieldManager::new();
-                                let _ = shield.unshield_file(&path);
-                                if std::fs::remove_file(&path).is_ok() {
-                                    *count += 1;
-                                }
+                                targets.push(path);
                             }
                         }
                     }
@@ -186,10 +192,88 @@ async fn prune_deps(full: bool, remove_all: bool, path: Option<String>) -> Resul
             }
         }
 
-        let mut count = 0;
-        find_and_remove(&current_dir, &deps_dir, full, &mut count);
+        fn dir_size(path: &std::path::Path) -> u64 {
+            let mut size = 0;
+            if let Ok(entries) = std::fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_dir() {
+                        size += dir_size(&p);
+                    } else if let Ok(meta) = std::fs::metadata(&p) {
+                        size += meta.len();
+                    }
+                }
+            }
+            size
+        }
 
-        println!("Removed {} items in total.", count);
+        find_targets(&current_dir, &deps_dir, full, &mut paths_to_delete);
+        
+        spinner.set_message("Calculating disk space usage...");
+        
+        let path_sizes: Vec<(std::path::PathBuf, u64)> = paths_to_delete
+            .par_iter()
+            .map(|path| {
+                if path.is_file() {
+                    let s = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+                    (path.clone(), s)
+                } else {
+                    (path.clone(), dir_size(path))
+                }
+            })
+            .collect();
+
+        spinner.finish_and_clear();
+
+        if path_sizes.is_empty() {
+            println!("No dependency directories found.");
+            return Ok(());
+        }
+
+        let format_size = |size: u64| -> String {
+            if size >= 1_048_576_000 {
+                format!("{:.2} GB", size as f64 / 1_048_576_000.0)
+            } else if size >= 1_048_576 {
+                format!("{:.1} MB", size as f64 / 1_048_576.0)
+            } else if size >= 1024 {
+                format!("{:.1} KB", size as f64 / 1024.0)
+            } else {
+                format!("{} B", size)
+            }
+        };
+
+        let mut total_size = 0;
+        for (path, size) in &path_sizes {
+            total_size += size;
+            println!("📄 Found {} ({})", path.display(), format_size(*size));
+        }
+
+        let pb = ProgressBar::new(paths_to_delete.len() as u64);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")?
+                .progress_chars("#>-"),
+        );
+        pb.set_message("Deleting directories...");
+
+        let count = AtomicU64::new(0);
+
+        paths_to_delete.par_iter().for_each(|path| {
+            if path.is_dir() {
+                if std::fs::remove_dir_all(path).is_ok() {
+                    count.fetch_add(1, Ordering::SeqCst);
+                }
+            } else {
+                let shield = ShieldManager::new();
+                let _ = shield.unshield_file(path);
+                if std::fs::remove_file(path).is_ok() {
+                    count.fetch_add(1, Ordering::SeqCst);
+                }
+            }
+            pb.inc(1);
+        });
+
+        pb.finish_with_message(format!("✅ Removed {} items. Freed {} of disk space.", count.load(Ordering::SeqCst), format_size(total_size)));
     } else {
         println!("Pruning {} directory...", deps_dir);
         let deps_path = current_dir.join(&deps_dir);
@@ -203,6 +287,7 @@ async fn prune_deps(full: bool, remove_all: bool, path: Option<String>) -> Resul
                 let shield = ShieldManager::new();
                 let _ = shield.unshield_file(&lock_path);
                 std::fs::remove_file(lock_path)?;
+                println!("Deleted local kumo.lock.");
             }
         }
     }
