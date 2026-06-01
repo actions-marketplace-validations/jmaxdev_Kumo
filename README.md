@@ -69,8 +69,8 @@ kumo remove express        # Remove a dependency
 kumo upgrade               # Upgrade all dependencies within semver ranges
 ```
 
-### 2. Built-in TypeScript Runtime
-You don't need to install `ts-node` or `typescript` locally to run TypeScript files. Kumo handles it transparently:
+### 2. TypeScript
+
 ```bash
 kumo ts init                # Generate a tsconfig.json file
 kumo ts exec src/index.ts   # Execute a .ts file instantly via tsx
