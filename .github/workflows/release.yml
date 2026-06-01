@@ -2,20 +2,6 @@ name: Release
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to release'
-        required: true
-        type: choice
-        options:
-          - stable
-          - beta
-          - alpha
-          - patch
-          - minor
-          - major
-          - rc
-        default: 'stable'
 
 jobs:
   test:
@@ -33,43 +19,17 @@ jobs:
 
       - name: Check Kumo
         run: cargo check
-  update-version:
-    name: Update Version
+  get-version:
+    name: Get Version
     runs-on: ubuntu-22.04
     needs: test
-    permissions:
-      contents: write
     outputs:
       new_tag: ${{ steps.get-version.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
-      - name: Update version
-        run: |
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "github-actions[bot]"
-          VERSION_TYPE=${{ github.event.inputs.version }}
-          
-          if [ "$VERSION_TYPE" = "stable" ]; then
-            BUMP_TYPE="patch"
-          elif [ "$VERSION_TYPE" = "beta" ]; then
-            BUMP_TYPE="beta"
-          elif [ "$VERSION_TYPE" = "alpha" ]; then
-            BUMP_TYPE="alpha"
-          elif [ "$VERSION_TYPE" = "minor" ]; then
-            BUMP_TYPE="minor"
-          elif [ "$VERSION_TYPE" = "major" ]; then
-            BUMP_TYPE="major"
-          elif [ "$VERSION_TYPE" = "rc" ]; then
-            BUMP_TYPE="rc"
-          fi
-          
-          node scripts/bump.js "$BUMP_TYPE"
-
-      - name: Get new version
+      - name: Get current version
         id: get-version
         run: |
           NEW_VERSION=$(grep -m 1 '^version = ' crates/cli/Cargo.toml | cut -d '"' -f 2)
@@ -78,7 +38,7 @@ jobs:
   build:
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    needs: update-version
+    needs: get-version
     strategy:
       matrix:
         os: [
@@ -102,8 +62,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@v6
-      with:
-        ref: ${{ needs.update-version.outputs.new_tag }}
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -152,7 +110,7 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [build, update-version, test]
+    needs: [build, get-version, test]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -163,7 +121,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ needs.update-version.outputs.new_tag }}
+          tag_name: ${{ needs.get-version.outputs.new_tag }}
           files: |
             windows-2022-build/kumo-windows.zip
             windows-2022-build/kumo-windows.zip.sha256
@@ -172,6 +130,6 @@ jobs:
             macos-14-build/kumo-macos.tar.gz
             macos-14-build/kumo-macos.tar.gz.sha256
           generate_release_notes: true
-          prerelease: ${{ contains(needs.update-version.outputs.new_tag, '-') }}
+          prerelease: ${{ contains(needs.get-version.outputs.new_tag, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
