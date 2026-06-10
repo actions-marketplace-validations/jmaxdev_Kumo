@@ -109,3 +109,6 @@ Kumo is licensed under the **[UnSetSoft Public License (UPL) 1.0](LICENSE.md)**.
 * ❌ You may **not** distribute the original or modified versions
 * ❌ You may **not** use it for commercial purposes
 * ❌ You may **not** modify the code except for contributive purposes towards the original project
+
+---
+Made by jmaxdev and fixed & documented by Antigravity
