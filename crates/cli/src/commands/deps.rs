@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use kumo_core::credentials;
 use kumo_core::keys;
+use std::time::Duration;
+use tokio::time::sleep;
 
 #[derive(Subcommand, Clone)]
 pub enum DepsSubcommand {
@@ -124,7 +126,7 @@ pub async fn execute_publish(
     println!("Publishing to {}...", registry_url);
     let url = format!("{}/{}", registry_url, name);
 
-    let response = ctx.resolver.client()
+    let mut response = ctx.resolver.client()
         .put(&url)
         .header("Authorization", format!("Bearer {}", token))
         .json(&publish_payload)
@@ -132,8 +134,71 @@ pub async fn execute_publish(
         .await
         .context("Failed to communicate with registry")?;
 
-    let status = response.status();
-    let body_text = response.text().await.unwrap_or_default();
+    let mut status = response.status();
+    let mut body_text = response.text().await.unwrap_or_default();
+
+    if status.as_u16() == 401 {
+        if let Ok(res_val) = serde_json::from_str::<serde_json::Value>(&body_text) {
+            if res_val.get("require2fa").and_then(|r| r.as_bool()) == Some(true) {
+                let session_id = res_val.get("sessionId").and_then(|s| s.as_str())
+                    .context("Missing sessionId in registry response")?;
+                let login_url = res_val.get("loginUrl").and_then(|u| u.as_str())
+                    .context("Missing loginUrl in registry response")?;
+
+                println!("\n------------------------------------------------------------");
+                println!("This publish operation requires a one-time password (OTP).");
+                println!("Please authorize the publish in your browser:");
+                println!("{}", login_url);
+                println!("------------------------------------------------------------\n");
+
+                if let Err(_) = open_browser(login_url) {
+                    println!("Could not open browser automatically. Please copy the link above and open it manually.");
+                } else {
+                    println!("Opening browser automatically...");
+                }
+
+                println!("Waiting for authorization...");
+                let poll_url = format!("{}/-/v1/login/poll/{}", registry_url, session_id);
+
+                let publish_token = loop {
+                    sleep(Duration::from_secs(2)).await;
+
+                    let poll_resp = match ctx.resolver.client().get(&poll_url).send().await {
+                        Ok(resp) => resp,
+                        Err(_) => continue, // Ignore network blips during polling
+                    };
+
+                    if !poll_resp.status().is_success() {
+                        continue;
+                    }
+
+                    let poll_body = poll_resp.text().await.unwrap_or_default();
+                    if let Ok(poll_val) = serde_json::from_str::<serde_json::Value>(&poll_body) {
+                        let status_str = poll_val.get("status").and_then(|s| s.as_str()).unwrap_or("pending");
+                        if status_str == "done" {
+                            if let Some(token) = poll_val.get("token").and_then(|t| t.as_str()) {
+                                break token.to_string();
+                            }
+                        } else if status_str == "failed" {
+                            anyhow::bail!("Publish authorization session failed or was denied by the user.");
+                        }
+                    }
+                };
+
+                println!("Publish authorized. Retrying publish...");
+                response = ctx.resolver.client()
+                    .put(&url)
+                    .header("Authorization", format!("Bearer {}", token))
+                    .header("npm-otp", publish_token)
+                    .json(&publish_payload)
+                    .send()
+                    .await
+                    .context("Failed to communicate with registry on retry")?;
+                status = response.status();
+                body_text = response.text().await.unwrap_or_default();
+            }
+        }
+    }
 
     if status.is_success() {
         println!("\x1b[32m✓\x1b[0m Published {}@{} successfully!", name, version);
@@ -146,4 +211,15 @@ pub async fn execute_publish(
         }
         anyhow::bail!("Publish failed with status {}: {}", status, body_text);
     }
+}
+
+fn open_browser(url: &str) -> std::io::Result<()> {
+    if cfg!(target_os = "windows") {
+        std::process::Command::new("cmd").args(["/C", "start", "", url]).spawn()?;
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg(url).spawn()?;
+    } else {
+        std::process::Command::new("xdg-open").arg(url).spawn()?;
+    }
+    Ok(())
 }
