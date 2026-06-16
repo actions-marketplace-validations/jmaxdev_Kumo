@@ -318,7 +318,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cli"
-version = "0.3.3-alpha.3"
+version = "0.3.3-alpha.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1296,7 +1296,7 @@ dependencies = [
 
 [[package]]
 name = "kumo-core"
-version = "0.3.3-alpha.3"
+version = "0.3.3-alpha.4"
 dependencies = [
  "anyhow",
  "base64",
@@ -1939,7 +1939,7 @@ dependencies = [
 
 [[package]]
 name = "resolver"
-version = "0.3.3-alpha.3"
+version = "0.3.3-alpha.4"
 dependencies = [
  "anyhow",
  "dirs",
@@ -2120,7 +2120,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "security"
-version = "0.3.3-alpha.3"
+version = "0.3.3-alpha.4"
 dependencies = [
  "anyhow",
  "blake3",
@@ -2218,6 +2218,7 @@ version = "1.0.150"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8014e44b4736ed0538adeecded0fce2a272f22dc9578a7eb6b2d9993c74cfb9"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "serde",

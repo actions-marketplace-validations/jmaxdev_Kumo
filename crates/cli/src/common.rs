@@ -289,4 +289,22 @@ mod tests {
         assert_eq!(parse_package_arg("lodash"), ("lodash".to_string(), "latest".to_string()));
         assert_eq!(parse_package_arg("@nestjs/core"), ("@nestjs/core".to_string(), "latest".to_string()));
     }
+
+    #[test]
+    fn test_preserve_json_key_order() {
+        let input_json = r#"{
+  "name": "kumo-dep-test",
+  "version": "1.0.6",
+  "dependencies": {
+    "vite": "^8.0.16"
+  },
+  "author": ""
+}"#;
+        let mut val: serde_json::Value = serde_json::from_str(input_json).unwrap();
+        if let Some(deps) = val.get_mut("dependencies").and_then(|d| d.as_object_mut()) {
+            deps.insert("express".to_string(), serde_json::json!("^4.18.2"));
+        }
+        let keys: Vec<&str> = val.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+        assert_eq!(keys, vec!["name", "version", "dependencies", "author"]);
+    }
 }
