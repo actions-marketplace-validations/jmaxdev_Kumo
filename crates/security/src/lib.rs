@@ -74,7 +74,7 @@ impl Default for Policy {
             .into_iter()
             .map(String::from)
             .collect(),
-            registry: "kumo".to_string(),
+            registry: "npm".to_string(),
         }
     }
 }
