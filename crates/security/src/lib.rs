@@ -44,6 +44,7 @@ pub struct Policy {
     pub trust_policy_ignore_after: u64,
     pub protected_packages: HashSet<String>,
     pub allowed_domains: HashSet<String>,
+    pub registry: String,
 }
 
 impl Default for Policy {
@@ -68,10 +69,12 @@ impl Default for Policy {
                 "objects.githubusercontent.com",
                 "registry.npmjs.org",
                 "nodejs.org",
+                "localhost",
             ]
             .into_iter()
             .map(String::from)
             .collect(),
+            registry: "kumo".to_string(),
         }
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "kumo-core"
-version = "0.3.2"
+version = "0.3.3-alpha.1"
 edition = "2021"
 
 [dependencies]
@@ -21,3 +21,8 @@ tokio-util = { version = "0.7", features = ["io", "io-util"] }
 bytes = "1.11"
 reflink-copy = "0.1"
 sha1 = "0.11"
+rsa = { version = "0.9.6", features = ["pem", "sha2"] }
+sha2 = "0.10.8"
+rand = "0.8.5"
+base64 = "0.22.1"
+

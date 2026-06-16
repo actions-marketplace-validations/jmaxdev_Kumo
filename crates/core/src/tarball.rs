@@ -144,6 +144,74 @@ pub async fn extract_and_store(
     Ok(file_map)
 }
 
+pub fn pack_directory(dir: &std::path::Path) -> Result<Vec<u8>> {
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    {
+        let mut builder = tar::Builder::new(&mut encoder);
+        
+        let walker = walkdir::WalkDir::new(dir)
+            .follow_links(false)
+            .into_iter()
+            .filter_entry(|e| {
+                let name = e.file_name().to_string_lossy();
+                name != "node_modules" 
+                    && name != ".git" 
+                    && name != ".kumo" 
+                    && name != "target"
+                    && name != ".DS_Store"
+                    && name != "kumo.lock"
+                    && name != "package-lock.json"
+                    && name != "pnpm-lock.yaml"
+                    && name != "yarn.lock"
+            });
+
+        for entry in walker {
+            let entry = entry.context("Failed to read directory entry during packing")?;
+            let path = entry.path();
+            if path.is_file() {
+                let rel_path = path.strip_prefix(dir)?;
+                
+                let mut components = vec!["package".to_string()];
+                for comp in rel_path.components() {
+                    components.push(comp.as_os_str().to_string_lossy().to_string());
+                }
+                let tar_name = components.join("/");
+                
+                builder.append_path_with_name(path, &tar_name)
+                    .with_context(|| format!("Failed to append file {} to archive", path.display()))?;
+            }
+        }
+        builder.finish()?;
+    }
+    
+    let tarball_bytes = encoder.finish()?;
+    Ok(tarball_bytes)
+}
+
+pub fn calculate_shasum(data: &[u8]) -> String {
+    use sha1::{Sha1, Digest};
+    let mut hasher = Sha1::new();
+    hasher.update(data);
+    hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+pub fn calculate_integrity(data: &[u8]) -> String {
+    use sha2::{Sha512, Digest};
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    let mut hasher = Sha512::new();
+    hasher.update(data);
+    let hash = hasher.finalize();
+    format!("sha512-{}", STANDARD.encode(&hash))
+}
+
+pub fn base64_encode(data: &[u8]) -> String {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    STANDARD.encode(data)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

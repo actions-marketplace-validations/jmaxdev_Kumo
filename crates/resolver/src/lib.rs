@@ -23,10 +23,58 @@ impl Resolver {
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
+        let mut registry_raw = "kumo".to_string();
+
+        // 1. Try environment variable
+        if let Ok(env_reg) = std::env::var("KUMO_REGISTRY") {
+            if !env_reg.trim().is_empty() {
+                registry_raw = env_reg.trim().to_string();
+            }
+        } else {
+            // 2. Try local kumo.config.json or global ~/.kumo/kumo.config.json
+            let mut found = false;
+            if let Ok(curr_dir) = std::env::current_dir() {
+                let local_path = curr_dir.join("kumo.config.json");
+                if let Ok(content) = std::fs::read_to_string(&local_path) {
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                        if let Some(r) = val.get("registry").and_then(|v| v.as_str()) {
+                            registry_raw = r.to_string();
+                            found = true;
+                        }
+                    }
+                }
+            }
+            if !found {
+                if let Some(home) = dirs::home_dir() {
+                    let global_path = home.join(".kumo").join("kumo.config.json");
+                    if let Ok(content) = std::fs::read_to_string(&global_path) {
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                            if let Some(r) = val.get("registry").and_then(|v| v.as_str()) {
+                                registry_raw = r.to_string();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let registry_url = match registry_raw.as_str() {
+            "npm" => "https://registry.npmjs.org".to_string(),
+            "kumo" => "https://kumo.unsetsoft.com".to_string(),
+            other if other.starts_with("http://") || other.starts_with("https://") => {
+                other.trim_end_matches('/').to_string()
+            }
+            _ => "https://kumo.unsetsoft.com".to_string(),
+        };
+
         Self {
             client,
-            registry_url: "https://registry.npmjs.org".to_string(),
+            registry_url,
         }
+    }
+
+    pub fn registry_url(&self) -> &str {
+        &self.registry_url
     }
 
     pub fn client(&self) -> &reqwest::Client {
@@ -168,7 +216,7 @@ impl Resolver {
                         VersionReq::parse(&normalized)
                     })
                     .collect::<Result<Vec<_>, _>>();
-                
+
                 if reqs_res.is_err() {
                     anyhow::bail!("Invalid semver range: {}", range);
                 }

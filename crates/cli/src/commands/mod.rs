@@ -121,7 +121,7 @@ register_commands!(
     #[command(about = "Remove a symlinked package from the project")]
     unlink,
     
-    #[command(alias = "audit-fix", about = "Automatically fix known vulnerabilities by upgrading affected packages")]
+    #[command(about = "Automatically fix known vulnerabilities by upgrading affected packages")]
     audit_fix,
     
     #[command(about = "Manage Kumo Shield security state")]
@@ -135,4 +135,10 @@ register_commands!(
     
     #[command(about = "Run a script defined in package.json (interactive if no script specified)")]
     run,
+
+    #[command(about = "Authenticate with the Kumo registry")]
+    auth,
+
+    #[command(about = "Manage dependencies (e.g. publish to registry)")]
+    deps,
 );
