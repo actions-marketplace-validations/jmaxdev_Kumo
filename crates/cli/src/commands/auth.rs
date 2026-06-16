@@ -17,16 +17,6 @@ impl super::Command for AuthCommand {
     }
 }
 
-fn open_browser(url: &str) -> std::io::Result<()> {
-    if cfg!(target_os = "windows") {
-        std::process::Command::new("cmd").args(["/C", "start", "", url]).spawn()?;
-    } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open").arg(url).spawn()?;
-    } else {
-        std::process::Command::new("xdg-open").arg(url).spawn()?;
-    }
-    Ok(())
-}
 
 pub async fn execute(
     ctx: &super::CommandContext,
@@ -87,11 +77,6 @@ pub async fn execute(
     println!("{}", login_url);
     println!("------------------------------------------------------------\n");
 
-    if let Err(_) = open_browser(login_url) {
-        println!("Could not open browser automatically. Please copy the link above and open it manually.");
-    } else {
-        println!("Opening browser automatically...");
-    }
 
     // 5. Poll registry for authentication status
     println!("Waiting for authorization...");

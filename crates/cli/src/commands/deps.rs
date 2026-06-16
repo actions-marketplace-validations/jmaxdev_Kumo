@@ -150,13 +150,6 @@ pub async fn execute_publish(
                 println!("Please authorize the publish in your browser:");
                 println!("{}", login_url);
                 println!("------------------------------------------------------------\n");
-
-                if let Err(_) = open_browser(login_url) {
-                    println!("Could not open browser automatically. Please copy the link above and open it manually.");
-                } else {
-                    println!("Opening browser automatically...");
-                }
-
                 println!("Waiting for authorization...");
                 let poll_url = format!("{}/-/v1/login/poll/{}", registry_url, session_id);
 
@@ -213,13 +206,3 @@ pub async fn execute_publish(
     }
 }
 
-fn open_browser(url: &str) -> std::io::Result<()> {
-    if cfg!(target_os = "windows") {
-        std::process::Command::new("cmd").args(["/C", "start", "", url]).spawn()?;
-    } else if cfg!(target_os = "macos") {
-        std::process::Command::new("open").arg(url).spawn()?;
-    } else {
-        std::process::Command::new("xdg-open").arg(url).spawn()?;
-    }
-    Ok(())
-}
