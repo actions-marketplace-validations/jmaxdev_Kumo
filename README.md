@@ -9,10 +9,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jmaxdev/Kumo"><img src="https://img.shields.io/badge/Language-Rust-orange?style=flat-square&logo=rust" alt="Language: Rust"></a>
-  <a href="docs/security.md"><img src="https://img.shields.io/badge/Security-Proactive-brightgreen?style=flat-square&logo=shield" alt="Security: Proactive"></a>
-  <a href="docs/caching.md"><img src="https://img.shields.io/badge/Caching-BLAKE3-blue?style=flat-square" alt="Caching: BLAKE3"></a>
-  <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-UPL_1.0-blueviolet?style=flat-square" alt="License: UPL 1.0"></a>
+  <a href="https://github.com/jmaxdev/Kumo"><img src="docs/assets/badge-rust.svg" alt="Language: Rust"></a>
+  &nbsp;&nbsp;
+  <a href="docs/caching.md"><img src="docs/assets/badge-caching.svg" alt="Caching: BLAKE3"></a>
+  &nbsp;&nbsp;
+  <a href="LICENSE.md"><img src="docs/assets/badge-license.svg" alt="License: UPL 1.0"></a>
 </p>
 
 ---
