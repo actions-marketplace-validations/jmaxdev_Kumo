@@ -34,6 +34,10 @@ pub async fn execute(
         }
     };
 
+    if registry_url != "https://kumo.unsetsoft.com" {
+        anyhow::bail!("Authentication is only supported for the Kumo registry (https://kumo.unsetsoft.com).");
+    }
+
     println!("Starting authentication with registry: {}", registry_url);
 
     // 2. Get or generate key pair

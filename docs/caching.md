@@ -81,12 +81,14 @@ Kumo provides built-in commands to inspect, audity, and clean up cached assets.
 ### `kumo stats`
 Shows global disk usage statistics, including number of unique files, packages, and total cached size.
 
+### `kumo prune store`
+Cleans up the global content-addressable store (`~/.kumo/store`), removing all cached packages and metadata.
+
 ### `kumo prune cache`
-Cleans up orphaned or unused packages and script caches in the global store.
-* To completely wipe all local metadata and package artifacts, run:
-  ```bash
-  kumo prune cache --full
-  ```
+Cleans up the registry metadata and script caches (`~/.kumo/cache`).
+
+### `kumo prune all`
+Cleans up both the global store and the registry cache.
 
 ### `kumo doctor`
 Scans the global store and runs health checks to ensure no cached package files are corrupted, missing, or altered.

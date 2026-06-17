@@ -26,6 +26,8 @@ kumo config init
 | `trust_policy_exclude` | Array | A list of package names that are excluded from the trust policy check. | `[]` |
 | `trust_policy_ignore_after` | Number | The number of minutes after publication to ignore trust verification (allows older releases without provenance). | `10080` (7 days) |
 | `protected_packages` | Array | A custom list of highly sensitive packages to protect from typosquatting (e.g., `["react", "next"]`). If empty, only existing project dependencies are protected. | `[]` |
+| `allowed_domains` | Array | A whitelist of domains from which Kumo is allowed to download package tarballs, preventing lockfile registry poisoning. | `["github.com", "objects.githubusercontent.com", "registry.npmjs.org", "nodejs.org", "localhost"]` |
+| `registry` | String | Default registry to use. Supported values are `"npm"`, `"kumo"`, or any custom HTTP/HTTPS URL. | `"npm"` |
 
 ## Mitigating Supply Chain Attacks
 

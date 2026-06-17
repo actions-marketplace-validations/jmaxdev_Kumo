@@ -2,11 +2,17 @@
 
 `kx` (Kumo Execute) is a tool designed to run binaries from your project's local dependencies or to download and run packages temporarily, similar to `npx`.
 
-## Usage
-
 ```bash
-kx <binary> [args...]
+kx [OPTIONS] <binary> [args...]
 ```
+
+## Options & Flags
+
+* `-p, --package <package>`: Package(s) to install and resolve before executing the target binary. You can specify multiple package parameters (e.g., `kx -p prettier -p typescript tsc`).
+* `--prune`: Cleans up the `kx` cache folder (`~/.kumo/kx`) by removing packages that have not been accessed/modified in the last 7 days.
+* `--full-prune`: Deletes all temporarily cached packages in the `kx` cache folder (`~/.kumo/kx`), regardless of their age.
+* `-V, --version`: Prints version information.
+* `-h, --help`: Prints help information.
 
 ## Features
 

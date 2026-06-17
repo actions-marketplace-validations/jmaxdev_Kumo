@@ -79,19 +79,28 @@ kumo stats
 ```
 
 ### `prune`
-Maintenance command to remove unnecessary files.
+Maintenance command to clean up local and global data.
 
-#### `prune cache [--full]`
-Removes orphaned files from the global store.
-- `--full`: Wipes the entire global store (all metadata and objects). Use this for a complete reset of the cache.
+#### `prune store`
+Cleans the global content-addressable store (`~/.kumo/store`), removing all cached packages and metadata.
 
-#### `prune deps [--full]`
-Cleans the local dependencies directory.
-- `--full`: Removes the entire directory (e.g., `node_modules/` or `dependencies/`) and the `kumo.lock` file.
+#### `prune cache`
+Cleans the registry metadata and scripts cache (`~/.kumo/cache/metadata` and `~/.kumo/cache/scripts`).
+
+#### `prune deps [--full] [--remove-all] [path]`
+Deletes the local dependencies directory (e.g. `node_modules` or `dependencies`).
+- `--full`: Also delete the `kumo.lock` file in the directory.
+- `--remove-all`: Recursively find and remove all dependency directories under the target path.
+- `[path]`: The path to start searching or pruning from. Defaults to the current directory (`.`).
+
+#### `prune all`
+Cleans both the global store and the registry cache.
 
 ```bash
-kumo prune cache [--full]
-kumo prune deps [--full]
+kumo prune store
+kumo prune cache
+kumo prune deps [--full] [--remove-all] [path]
+kumo prune all
 ```
 
 ### `doctor` (alias: `dr`)
@@ -199,9 +208,16 @@ kumo ts init
 Runs the official TypeScript compiler (`tsc`) on your project.
 
 ```bash
-kumo ts build src/index.ts --noEmit
+kumo ts build src/index.ts
 ```
 _For configuration options, see the [tsc documentation](https://www.typescriptlang.org/docs/handbook/compiler-options.html)._
+
+#### `ts check`
+Type-checks the TypeScript project without emitting compiled files (runs `tsc --noEmit`).
+
+```bash
+kumo ts check
+```
 
 #### `ts exec`
 Executes a TypeScript file directly using `tsx` (TypeScript Execute).
@@ -240,3 +256,65 @@ Checks for and installs the latest version of the **Kumo CLI binary** from GitHu
 kumo update
 kumo update --pre
 ```
+
+### `run [script] [args...]`
+Runs a script defined in `package.json` or `kumo.json` or a binary in the `.bin` directory. If no script name is specified, Kumo launches an interactive selector in the terminal to let you choose which script to run.
+
+```bash
+kumo run
+kumo run build -- --production
+```
+
+### `auth [--registry <URL>]`
+Authenticates with the Kumo registry. It generates a local cryptographic key pair (`private_key.pem` and `public_key.pem` inside `~/.kumo/`) and initiates a browser-based interactive OIDC login session.
+
+- `--registry`: Custom registry URL to authenticate with. Note that this command is **strictly restricted** to the official Kumo registry (`https://kumo.unsetsoft.com`).
+
+```bash
+kumo auth
+```
+
+### `deps publish [path] [--registry <URL>]`
+Publishes a package to the Kumo registry. It packs the target directory into a `.tgz` tarball, signs the version's BLAKE3 integrity checksum using your private key, and submits the package to the registry.
+
+- `[path]`: The path to the package directory to publish. Defaults to the current directory (`.`).
+- `--registry`: Custom registry URL to publish to. Note that this command is **strictly restricted** to the official Kumo registry (`https://kumo.unsetsoft.com`).
+
+```bash
+kumo deps publish
+```
+
+### `audit-fix`
+Scans dependencies in your `kumo.lock` file for vulnerabilities. For any vulnerable packages, it checks the registry to see if a newer version is available that is free of known vulnerabilities. If a fix is found, Kumo automatically updates the semver ranges in `kumo.json` or `package.json` and advises running `kumo install` to apply the upgrade.
+
+```bash
+kumo audit-fix
+```
+
+### `shield [on | off | status]`
+Manages Kumo Shield status. Kumo Shield leverages native OS attributes to mark global cache package files and critical local configurations (like `kumo.lock` and `kumo.config.json`) as Read-Only, preventing malicious scripts or processes from tampering with them in the background.
+
+```bash
+# Activate Kumo Shield
+kumo shield on
+
+# Check current Shield status
+kumo shield status
+```
+
+### `unlock <file>`
+Unlocks a shielded configuration file (`kumo.config.json`) or lockfile (`kumo.lock`) to allow manual editing.
+> [!CAUTION]
+> **Anti-Malware Trap:** This command is strictly gated behind an interactive terminal (TTY) check. Any script attempting to run this command non-interactively or piping input into it will be blocked.
+
+```bash
+kumo unlock kumo.config.json
+```
+
+### `lock [file]`
+Manually re-locks files under Kumo Shield. If no file is specified, it defaults to locking both `kumo.config.json` and `kumo.lock`.
+
+```bash
+kumo lock
+```
+

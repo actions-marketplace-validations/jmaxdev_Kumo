@@ -51,6 +51,10 @@ pub async fn execute_publish(
         }
     };
 
+    if registry_url != "https://kumo.unsetsoft.com" {
+        anyhow::bail!("Publishing is only supported for the Kumo registry (https://kumo.unsetsoft.com).");
+    }
+
     // 2. Load token
     let token = credentials::get_token(&registry_url)
         .context(format!("No credentials found for registry {}. Please run 'kumo auth' first.", registry_url))?;
