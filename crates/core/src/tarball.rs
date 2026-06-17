@@ -147,6 +147,32 @@ pub async fn extract_and_store(
 pub fn pack_directory(dir: &std::path::Path) -> Result<Vec<u8>> {
     use flate2::write::GzEncoder;
     use flate2::Compression;
+    use ignore::gitignore::GitignoreBuilder;
+
+    // Resolve ignore file to use, in order of precedence: .kignore -> .npmignore -> .gitignore
+    let mut ignore_builder = GitignoreBuilder::new(dir);
+    let kignore = dir.join(".kignore");
+    let npmignore = dir.join(".npmignore");
+    let gitignore_path = dir.join(".gitignore");
+
+    let ignore_file_to_use = if kignore.exists() {
+        Some(kignore)
+    } else if npmignore.exists() {
+        Some(npmignore)
+    } else if gitignore_path.exists() {
+        Some(gitignore_path)
+    } else {
+        None
+    };
+
+    if let Some(ignore_file) = ignore_file_to_use {
+        if let Some(err) = ignore_builder.add(ignore_file) {
+            anyhow::bail!("Failed to parse ignore file: {}", err);
+        }
+    }
+
+    let gitignore_matcher = ignore_builder.build()
+        .context("Failed to build gitignore matcher")?;
 
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     {
@@ -155,17 +181,37 @@ pub fn pack_directory(dir: &std::path::Path) -> Result<Vec<u8>> {
         let walker = walkdir::WalkDir::new(dir)
             .follow_links(false)
             .into_iter()
-            .filter_entry(|e| {
+            .filter_entry(move |e| {
                 let name = e.file_name().to_string_lossy();
-                name != "node_modules" 
-                    && name != ".git" 
-                    && name != ".kumo" 
-                    && name != "target"
-                    && name != ".DS_Store"
-                    && name != "kumo.lock"
-                    && name != "package-lock.json"
-                    && name != "pnpm-lock.yaml"
-                    && name != "yarn.lock"
+                
+                // 1. Default ignores
+                if name == "node_modules" 
+                    || name == ".git" 
+                    || name == ".kumo" 
+                    || name == "target"
+                    || name == ".DS_Store"
+                    || name == "kumo.lock"
+                    || name == "package-lock.json"
+                    || name == "pnpm-lock.yaml"
+                    || name == "yarn.lock"
+                    || name == "kumo.config.json"
+                    || name == ".env"
+                    || name.starts_with(".env.")
+                {
+                    return false;
+                }
+                
+                // 2. Custom ignore files
+                if let Ok(rel_path) = e.path().strip_prefix(dir) {
+                    if !rel_path.as_os_str().is_empty() {
+                        let is_dir = e.path().is_dir();
+                        if gitignore_matcher.matched_path_or_any_parents(rel_path, is_dir).is_ignore() {
+                            return false;
+                        }
+                    }
+                }
+                
+                true
             });
 
         for entry in walker {
@@ -223,5 +269,118 @@ mod tests {
         
         assert!(verify_shasum(data, expected).is_ok());
         assert!(verify_shasum(data, "wrong").is_err());
+    }
+
+    #[test]
+    fn test_pack_directory_ignores() -> Result<()> {
+        use std::fs;
+        let temp = tempfile::tempdir()?;
+        let path = temp.path();
+
+        // Create standard files
+        fs::write(path.join("package.json"), "{}")?;
+        fs::create_dir_all(path.join("src"))?;
+        fs::write(path.join("src").join("index.js"), "console.log('hello');")?;
+
+        // Create default ignored files/directories
+        fs::create_dir_all(path.join("node_modules").join("dep"))?;
+        fs::write(path.join("node_modules").join("dep").join("index.js"), "ignored")?;
+        fs::write(path.join("kumo.config.json"), "{}")?;
+        fs::write(path.join(".env"), "SECRET=1")?;
+        fs::write(path.join(".env.local"), "SECRET=2")?;
+        fs::write(path.join(".env.test"), "SECRET=3")?;
+
+        // Create custom ignored files/directories
+        fs::create_dir_all(path.join("ignored_by_custom"))?;
+        fs::write(path.join("ignored_by_custom").join("some_file.js"), "ignored")?;
+        fs::write(path.join("src").join("temp.log"), "some logs")?;
+
+        // Create .kignore
+        fs::write(path.join(".kignore"), "ignored_by_custom/\n*.log\n")?;
+
+        // Pack the directory
+        let tarball_bytes = pack_directory(path)?;
+
+        // Inspect tarball
+        let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(&tarball_bytes[..]));
+        let mut packed_paths = std::collections::HashSet::new();
+        for entry in archive.entries()? {
+            let entry = entry?;
+            let path_str = entry.path()?.to_string_lossy().replace('\\', "/");
+            packed_paths.insert(path_str);
+        }
+
+        // Verify matches
+        assert!(packed_paths.contains("package/package.json"));
+        assert!(packed_paths.contains("package/src/index.js"));
+        assert!(packed_paths.contains("package/.kignore"));
+
+        assert!(!packed_paths.contains("package/node_modules/dep/index.js"));
+        assert!(!packed_paths.contains("package/kumo.config.json"));
+        assert!(!packed_paths.contains("package/.env"));
+        assert!(!packed_paths.contains("package/.env.local"));
+        assert!(!packed_paths.contains("package/.env.test"));
+        assert!(!packed_paths.contains("package/ignored_by_custom/some_file.js"));
+        assert!(!packed_paths.contains("package/src/temp.log"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pack_directory_precedence_npmignore() -> Result<()> {
+        use std::fs;
+        let temp = tempfile::tempdir()?;
+        let path = temp.path();
+
+        fs::write(path.join("package.json"), "{}")?;
+        fs::write(path.join("npm-ignored.js"), "ignored")?;
+        fs::write(path.join("git-ignored.js"), "ignored")?;
+
+        // .npmignore ignores npm-ignored.js
+        fs::write(path.join(".npmignore"), "npm-ignored.js\n")?;
+        // .gitignore ignores git-ignored.js
+        fs::write(path.join(".gitignore"), "git-ignored.js\n")?;
+
+        let tarball_bytes = pack_directory(path)?;
+        let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(&tarball_bytes[..]));
+        let mut packed_paths = std::collections::HashSet::new();
+        for entry in archive.entries()? {
+            let entry = entry?;
+            let path_str = entry.path()?.to_string_lossy().replace('\\', "/");
+            packed_paths.insert(path_str);
+        }
+
+        // Since .npmignore is present, .gitignore should be ignored completely.
+        // Thus, npm-ignored.js is ignored, but git-ignored.js is INCLUDED.
+        assert!(!packed_paths.contains("package/npm-ignored.js"));
+        assert!(packed_paths.contains("package/git-ignored.js"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pack_directory_precedence_gitignore() -> Result<()> {
+        use std::fs;
+        let temp = tempfile::tempdir()?;
+        let path = temp.path();
+
+        fs::write(path.join("package.json"), "{}")?;
+        fs::write(path.join("git-ignored.js"), "ignored")?;
+
+        // Only .gitignore is present
+        fs::write(path.join(".gitignore"), "git-ignored.js\n")?;
+
+        let tarball_bytes = pack_directory(path)?;
+        let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(&tarball_bytes[..]));
+        let mut packed_paths = std::collections::HashSet::new();
+        for entry in archive.entries()? {
+            let entry = entry?;
+            let path_str = entry.path()?.to_string_lossy().replace('\\', "/");
+            packed_paths.insert(path_str);
+        }
+
+        assert!(!packed_paths.contains("package/git-ignored.js"));
+
+        Ok(())
     }
 }

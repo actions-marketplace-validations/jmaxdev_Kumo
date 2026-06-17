@@ -202,6 +202,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bstr"
+version = "1.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63044e1ae8e69f3b5a92c736ca6269b8d12fa7efe39bf34ddb06d102cf0e2cab"
+dependencies = [
+ "memchr",
+ "serde",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -318,7 +328,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cli"
-version = "0.3.3-alpha.4"
+version = "0.3.3-alpha.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -880,6 +890,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
+name = "globset"
+version = "0.4.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52dfc19153a48bde0cbd630453615c8151bce3a5adfac7a0aebfbf0a1e1f57e3"
+dependencies = [
+ "aho-corasick",
+ "bstr",
+ "log",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
 name = "h2"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1177,6 +1200,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ignore"
+version = "0.4.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b915661dd01db3f05050265b2477bcc6527b3792388e2749b41623cc592be67d"
+dependencies = [
+ "crossbeam-deque",
+ "globset",
+ "log",
+ "memchr",
+ "regex-automata",
+ "same-file",
+ "walkdir",
+ "winapi-util",
+]
+
+[[package]]
 name = "indexmap"
 version = "2.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1296,7 +1335,7 @@ dependencies = [
 
 [[package]]
 name = "kumo-core"
-version = "0.3.3-alpha.4"
+version = "0.3.3-alpha.5"
 dependencies = [
  "anyhow",
  "base64",
@@ -1305,6 +1344,7 @@ dependencies = [
  "dirs",
  "flate2",
  "futures-util",
+ "ignore",
  "rand 0.8.6",
  "reflink-copy",
  "reqwest",
@@ -1939,7 +1979,7 @@ dependencies = [
 
 [[package]]
 name = "resolver"
-version = "0.3.3-alpha.4"
+version = "0.3.3-alpha.5"
 dependencies = [
  "anyhow",
  "dirs",
@@ -2120,7 +2160,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "security"
-version = "0.3.3-alpha.4"
+version = "0.3.3-alpha.5"
 dependencies = [
  "anyhow",
  "blake3",
