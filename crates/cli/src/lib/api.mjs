@@ -2,6 +2,14 @@ import fs from 'fs';
 import http from 'http';
 import { spawn } from 'child_process';
 import { pipeline } from 'stream/promises';
+import { register } from 'node:module';
+
+try {
+    const loaderUrl = new URL('./loader.mjs', import.meta.url).href;
+    register(loaderUrl);
+} catch (err) {
+    // Fail silently in older node versions
+}
 
 globalThis.Kumo = {
     version: "__KUMO_VERSION__",

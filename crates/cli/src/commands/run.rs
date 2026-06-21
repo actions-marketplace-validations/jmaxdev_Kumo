@@ -189,6 +189,16 @@ pub async fn execute(name: &str, args: Vec<String>) -> Result<()> {
                     cmd.env("PATH", new_path);
                 }
 
+                if let Ok(polyfill_url) = crate::common::ensure_kumo_polyfills() {
+                    let old_node_opts = std::env::var("NODE_OPTIONS").unwrap_or_default();
+                    let new_node_opts = if old_node_opts.is_empty() {
+                        format!("--import file://{}", polyfill_url)
+                    } else {
+                        format!("--import file://{} {}", polyfill_url, old_node_opts)
+                    };
+                    cmd.env("NODE_OPTIONS", new_node_opts);
+                }
+
                 if use_cache {
                     let mut child = cmd.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn()?;
                     let stdout = child.stdout.take().unwrap();

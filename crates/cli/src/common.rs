@@ -210,6 +210,35 @@ pub async fn create_shim(
     Ok(())
 }
 
+#[allow(dead_code)]
+pub fn ensure_kumo_polyfills() -> Result<String> {
+    let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    let kumo_dir = home.join(".kumo");
+    let lib_dir = kumo_dir.join("lib");
+    if !lib_dir.exists() {
+        std::fs::create_dir_all(&lib_dir)?;
+    }
+    
+    let polyfill_path = lib_dir.join("api.mjs");
+    let polyfill_content = include_str!("lib/api.mjs").replace("__KUMO_VERSION__", env!("CARGO_PKG_VERSION"));
+    std::fs::write(&polyfill_path, polyfill_content)?;
+
+    let loader_path = lib_dir.join("loader.mjs");
+    let loader_content = include_str!("lib/loader.mjs");
+    std::fs::write(&loader_path, loader_content)?;
+
+    let dts_path = lib_dir.join("kumo.d.ts");
+    let dts_content = include_str!("lib/kumo.d.ts");
+    std::fs::write(&dts_path, dts_content)?;
+
+    let mut polyfill_url = polyfill_path.to_string_lossy().replace('\\', "/");
+    if cfg!(windows) && !polyfill_url.starts_with('/') {
+        polyfill_url = format!("/{}", polyfill_url);
+    }
+    
+    Ok(polyfill_url)
+}
+
 pub fn print_update_banner(new_version: &str) {
     let current_version = env!("CARGO_PKG_VERSION");
     println!("\n\x1b[33m┌─────────────────────────────────────────────────────────┐\x1b[0m");
