@@ -1,11 +1,11 @@
 use anyhow::Result;
 use kumo_core::Store;
+use reqwest;
 use resolver::Resolver;
 use security::{Policy, SecurityEngine};
-use std::path::PathBuf;
-use serde_json;
-use reqwest;
 use semver;
+use serde_json;
+use std::path::PathBuf;
 
 pub async fn init_components() -> Result<(Store, SecurityEngine, Resolver)> {
     let store_path = dirs::home_dir()
@@ -109,7 +109,6 @@ pub async fn check_for_new_version() -> Option<String> {
         }
     }
 
-
     if now - last_check > 86400 || cached_latest.is_empty() {
         let client = reqwest::Client::builder()
             .user_agent("kumo-pkg-manager")
@@ -198,7 +197,7 @@ pub async fn create_shim(
             target.display()
         );
         tokio::fs::write(&shim_path, content).await?;
-        
+
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -218,9 +217,10 @@ pub fn ensure_kumo_polyfills() -> Result<String> {
     if !lib_dir.exists() {
         std::fs::create_dir_all(&lib_dir)?;
     }
-    
+
     let polyfill_path = lib_dir.join("api.mjs");
-    let polyfill_content = include_str!("lib/api.mjs").replace("__KUMO_VERSION__", env!("CARGO_PKG_VERSION"));
+    let polyfill_content =
+        include_str!("lib/api.mjs").replace("__KUMO_VERSION__", env!("CARGO_PKG_VERSION"));
     std::fs::write(&polyfill_path, polyfill_content)?;
 
     let loader_path = lib_dir.join("loader.mjs");
@@ -235,7 +235,7 @@ pub fn ensure_kumo_polyfills() -> Result<String> {
     if cfg!(windows) && !polyfill_url.starts_with('/') {
         polyfill_url = format!("/{}", polyfill_url);
     }
-    
+
     Ok(polyfill_url)
 }
 
@@ -296,7 +296,14 @@ pub fn prepend_to_path(dir: &std::path::Path) -> String {
     paths.extend(std::env::split_paths(&old_path));
     std::env::join_paths(paths)
         .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| format!("{}{}{}", dir.display(), if cfg!(windows) { ";" } else { ":" }, old_path))
+        .unwrap_or_else(|_| {
+            format!(
+                "{}{}{}",
+                dir.display(),
+                if cfg!(windows) { ";" } else { ":" },
+                old_path
+            )
+        })
 }
 
 #[cfg(test)]
@@ -305,18 +312,42 @@ mod tests {
 
     #[test]
     fn test_parse_package_id() {
-        assert_eq!(parse_package_id("express@4.18.2"), ("express".to_string(), "4.18.2".to_string()));
-        assert_eq!(parse_package_id("@types/node@14.14.31"), ("@types/node".to_string(), "14.14.31".to_string()));
-        assert_eq!(parse_package_id("lodash"), ("lodash".to_string(), "unknown".to_string()));
-        assert_eq!(parse_package_id("@nestjs/core"), ("@nestjs/core".to_string(), "unknown".to_string()));
+        assert_eq!(
+            parse_package_id("express@4.18.2"),
+            ("express".to_string(), "4.18.2".to_string())
+        );
+        assert_eq!(
+            parse_package_id("@types/node@14.14.31"),
+            ("@types/node".to_string(), "14.14.31".to_string())
+        );
+        assert_eq!(
+            parse_package_id("lodash"),
+            ("lodash".to_string(), "unknown".to_string())
+        );
+        assert_eq!(
+            parse_package_id("@nestjs/core"),
+            ("@nestjs/core".to_string(), "unknown".to_string())
+        );
     }
 
     #[test]
     fn test_parse_package_arg() {
-        assert_eq!(parse_package_arg("express@4.18.2"), ("express".to_string(), "4.18.2".to_string()));
-        assert_eq!(parse_package_arg("@types/node@14.14.31"), ("@types/node".to_string(), "14.14.31".to_string()));
-        assert_eq!(parse_package_arg("lodash"), ("lodash".to_string(), "latest".to_string()));
-        assert_eq!(parse_package_arg("@nestjs/core"), ("@nestjs/core".to_string(), "latest".to_string()));
+        assert_eq!(
+            parse_package_arg("express@4.18.2"),
+            ("express".to_string(), "4.18.2".to_string())
+        );
+        assert_eq!(
+            parse_package_arg("@types/node@14.14.31"),
+            ("@types/node".to_string(), "14.14.31".to_string())
+        );
+        assert_eq!(
+            parse_package_arg("lodash"),
+            ("lodash".to_string(), "latest".to_string())
+        );
+        assert_eq!(
+            parse_package_arg("@nestjs/core"),
+            ("@nestjs/core".to_string(), "latest".to_string())
+        );
     }
 
     #[test]
@@ -333,7 +364,12 @@ mod tests {
         if let Some(deps) = val.get_mut("dependencies").and_then(|d| d.as_object_mut()) {
             deps.insert("express".to_string(), serde_json::json!("^4.18.2"));
         }
-        let keys: Vec<&str> = val.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+        let keys: Vec<&str> = val
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|k| k.as_str())
+            .collect();
         assert_eq!(keys, vec!["name", "version", "dependencies", "author"]);
     }
 }

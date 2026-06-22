@@ -23,7 +23,6 @@ pub async fn execute(file: String) -> Result<()> {
         return Ok(());
     }
 
-    // Whitelist check
     let allowed_files = ["kumo.config.json", "kumo.lock"];
     let filename = Path::new(&file).file_name().unwrap_or_default().to_string_lossy();
     
@@ -33,7 +32,6 @@ pub async fn execute(file: String) -> Result<()> {
 
     let file_path = std::env::current_dir()?.join(&file);
     if !file_path.exists() {
-        // Also check if it might be global config
         if file == "kumo.config.json" {
             let global_path = dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".kumo").join("kumo.config.json");
             if global_path.exists() {
@@ -47,7 +45,6 @@ pub async fn execute(file: String) -> Result<()> {
 }
 
 async fn unlock_file(path: &Path, shield: &ShieldManager) -> Result<()> {
-    // VULN-6: TTY Check
     use std::io::IsTerminal;
     if !std::io::stdin().is_terminal() {
         anyhow::bail!("Security violation: kumo unlock requires an interactive terminal (TTY) to verify human presence.");

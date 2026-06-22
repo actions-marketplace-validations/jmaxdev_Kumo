@@ -61,7 +61,12 @@ pub async fn link_package(
                         Err(e) => {
                             attempts += 1;
                             if attempts >= 10 {
-                                return Err(anyhow::anyhow!("IO Error: {} (Source: {:?}, Dest: {:?})", e, src_clone, dest_clone));
+                                return Err(anyhow::anyhow!(
+                                    "IO Error: {} (Source: {:?}, Dest: {:?})",
+                                    e,
+                                    src_clone,
+                                    dest_clone
+                                ));
                             }
                             let raw_err = e.raw_os_error();
                             if raw_err == Some(32) || raw_err == Some(5) {
@@ -70,7 +75,12 @@ pub async fn link_package(
                                     let _ = std::fs::remove_file(&dest_clone);
                                 }
                             } else {
-                                return Err(anyhow::anyhow!("IO Error: {} (Source: {:?}, Dest: {:?})", e, src_clone, dest_clone));
+                                return Err(anyhow::anyhow!(
+                                    "IO Error: {} (Source: {:?}, Dest: {:?})",
+                                    e,
+                                    src_clone,
+                                    dest_clone
+                                ));
                             }
                         }
                     }

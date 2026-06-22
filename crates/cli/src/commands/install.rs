@@ -503,12 +503,10 @@ async fn run_install_scripts(
 
             let mut all_warnings = Vec::new();
             
-            // Analyze the script string itself (in case of inline evaluation)
             if let Ok(warnings) = security::ast::analyze_script(script_content) {
                 all_warnings.extend(warnings);
             }
             
-            // Try to find .js files referenced in the command and analyze them
             let words: Vec<&str> = script_content.split_whitespace().collect();
             for word in words {
                 if word.ends_with(".js") || word.ends_with(".cjs") || word.ends_with(".mjs") || word.ends_with(".ts") {

@@ -39,7 +39,6 @@ pub async fn execute_publish(
     path: &str,
     registry_opt: Option<&str>,
 ) -> Result<()> {
-    // 1. Resolve registry URL
     let registry_url = if let Some(r) = registry_opt {
         r.trim_end_matches('/').to_string()
     } else {
@@ -55,11 +54,9 @@ pub async fn execute_publish(
         anyhow::bail!("Publishing is only supported for the Kumo registry (https://kumo.unsetsoft.com).");
     }
 
-    // 2. Load token
     let token = credentials::get_token(&registry_url)
         .context(format!("No credentials found for registry {}. Please run 'kumo auth' first.", registry_url))?;
 
-    // 3. Read package.json
     let path_buf = std::path::Path::new(path);
     let pkg_json_path = path_buf.join("package.json");
     if !pkg_json_path.exists() {
@@ -73,16 +70,13 @@ pub async fn execute_publish(
     let version = pkg_json.get("version").and_then(|v| v.as_str())
         .context("package.json is missing 'version' field")?;
 
-    // 4. Pack the directory
     println!("Packing package directory...");
     let tarball_bytes = kumo_core::tarball::pack_directory(path_buf)?;
     let tarball_len = tarball_bytes.len();
 
-    // 5. Calculate hashes using core helpers
     let shasum = kumo_core::tarball::calculate_shasum(&tarball_bytes);
     let integrity = kumo_core::tarball::calculate_integrity(&tarball_bytes);
 
-    // 6. Sign integrity hash
     let home = dirs::home_dir().context("Could not determine home directory")?;
     let priv_key_path = home.join(".kumo").join("private_key.pem");
     if !priv_key_path.exists() {
@@ -93,7 +87,6 @@ pub async fn execute_publish(
     println!("Signing version {} integrity...", version);
     let kumo_signature = keys::sign_payload(&private_key_pem, &integrity)?;
 
-    // 7. Construct publish payload
     let tarball_base64 = kumo_core::tarball::base64_encode(&tarball_bytes);
     let basename = name.split('/').last().unwrap_or(name);
     let tarball_filename = format!("{}-{}.tgz", basename, version);
@@ -126,7 +119,6 @@ pub async fn execute_publish(
         }
     });
 
-    // 8. Put request to registry
     println!("Publishing to {}...", registry_url);
     let url = format!("{}/{}", registry_url, name);
 
@@ -162,7 +154,7 @@ pub async fn execute_publish(
 
                     let poll_resp = match ctx.resolver.client().get(&poll_url).send().await {
                         Ok(resp) => resp,
-                        Err(_) => continue, // Ignore network blips during polling
+                        Err(_) => continue,
                     };
 
                     if !poll_resp.status().is_success() {

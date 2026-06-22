@@ -22,7 +22,7 @@ pub async fn execute(
     ctx: &super::CommandContext,
     registry_opt: Option<&str>,
 ) -> Result<()> {
-    // 1. Resolve registry URL
+
     let registry_url = if let Some(r) = registry_opt {
         r.trim_end_matches('/').to_string()
     } else {
@@ -40,10 +40,8 @@ pub async fn execute(
 
     println!("Starting authentication with registry: {}", registry_url);
 
-    // 2. Get or generate key pair
     let (_priv_pem, pub_pem) = keys::get_or_create_keypair()?;
 
-    // 3. Initiate web login session on the registry
     let url = format!("{}/-/v1/login", registry_url);
     let payload = serde_json::json!({
         "publicKey": pub_pem,
@@ -75,14 +73,12 @@ pub async fn execute(
         .and_then(|u| u.as_str())
         .context("Missing loginUrl in registry response")?;
 
-    // 4. Open loginUrl in browser
     println!("\n------------------------------------------------------------");
     println!("Please authenticate in your browser:");
     println!("{}", login_url);
     println!("------------------------------------------------------------\n");
 
 
-    // 5. Poll registry for authentication status
     println!("Waiting for authorization...");
     let poll_url = format!("{}/-/v1/login/poll/{}", registry_url, session_id);
 
@@ -91,7 +87,7 @@ pub async fn execute(
 
         let poll_resp = match ctx.resolver.client().get(&poll_url).send().await {
             Ok(resp) => resp,
-            Err(_) => continue, // Ignore network blips during polling
+            Err(_) => continue,
         };
 
         if !poll_resp.status().is_success() {

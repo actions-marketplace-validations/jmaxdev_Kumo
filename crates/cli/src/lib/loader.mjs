@@ -37,7 +37,6 @@ export async function resolve(specifier, context, nextResolve) {
         url: resolved
       };
     } else {
-      // Resolve bare imports relative to the local project CWD so they are loaded from local node_modules
       const localParentURL = pathToFileURL(process.cwd() + '/index.js').href;
       return nextResolve(specifier, {
         ...context,

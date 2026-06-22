@@ -2,9 +2,9 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-pub mod sandbox;
 pub mod ast;
 pub mod proxy;
+pub mod sandbox;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Vulnerability {
@@ -192,7 +192,6 @@ impl SecurityEngine {
             return true;
         }
 
-
         if self.policy.trust_policy_ignore_after > 0 {
             if let Some(pub_at) = published_at {
                 if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(pub_at) {
@@ -337,8 +336,11 @@ impl SecurityEngine {
         curr_idx >= min_idx
     }
 
-    pub fn check_typosquatting(&self, name: &str, existing_deps: &HashSet<String>) -> Option<String> {
-
+    pub fn check_typosquatting(
+        &self,
+        name: &str,
+        existing_deps: &HashSet<String>,
+    ) -> Option<String> {
         let name_normalized = if name.starts_with('@') {
             name.split('/').nth(1).unwrap_or(name)
         } else {
@@ -402,15 +404,16 @@ impl SecurityEngine {
 
             let tarball_url = &pkg_data.resolution.tarball;
 
-            // 1. HTTPS Enforcement
-            if !tarball_url.starts_with("https://") && !tarball_url.starts_with("git+https://") && !tarball_url.starts_with("git+ssh://") {
+            if !tarball_url.starts_with("https://")
+                && !tarball_url.starts_with("git+https://")
+                && !tarball_url.starts_with("git+ssh://")
+            {
                 anyhow::bail!(
                     "Lockfile injection detected! Package '{}' resolves to an insecure or unsupported URL scheme: {}",
                     name, tarball_url
                 );
             }
 
-            // 2. Host Validation
             if let Ok(parsed_url) = url::Url::parse(tarball_url) {
                 if let Some(host) = parsed_url.host_str() {
                     let mut allowed = false;
@@ -428,22 +431,25 @@ impl SecurityEngine {
                     }
                 }
             } else {
-                anyhow::bail!("Lockfile injection detected! Invalid URL for package '{}': {}", name, tarball_url);
+                anyhow::bail!(
+                    "Lockfile injection detected! Invalid URL for package '{}': {}",
+                    name,
+                    tarball_url
+                );
             }
 
-            // 3. Package Name Alignment
-            // The URL must contain the package name to prevent hijacking.
-            // E.g., 'react' -> https://registry.npmjs.org/react/-/react-18.0.0.tgz
             let name_encoded = urlencoding::encode(&name);
             let name_encoded_scoped = name.replace('/', "%2f");
-            if !tarball_url.contains(&name) && !tarball_url.contains(name_encoded.as_ref()) && !tarball_url.contains(&name_encoded_scoped) {
+            if !tarball_url.contains(&name)
+                && !tarball_url.contains(name_encoded.as_ref())
+                && !tarball_url.contains(&name_encoded_scoped)
+            {
                 anyhow::bail!(
                     "Lockfile injection detected! The resolved URL for '{}' does not appear to contain the package name. URL: {}",
                     name, tarball_url
                 );
             }
 
-            // 4. Integrity Validation
             let shasum = &pkg_data.resolution.shasum;
             if shasum.is_empty() {
                 anyhow::bail!(
@@ -469,8 +475,12 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
     let len_a = a_chars.len();
     let len_b = b_chars.len();
 
-    if len_a == 0 { return len_b; }
-    if len_b == 0 { return len_a; }
+    if len_a == 0 {
+        return len_b;
+    }
+    if len_b == 0 {
+        return len_a;
+    }
 
     let mut dp = vec![0; len_b + 1];
     for j in 0..=len_b {
@@ -499,18 +509,14 @@ fn is_suspiciously_similar(a: &str, b: &str) -> bool {
     let min_len = std::cmp::min(len_a, len_b);
     let max_len = std::cmp::max(len_a, len_b);
 
-    // Names ≤ 3 chars are too short for meaningful typosquatting detection
     if min_len <= 3 {
         return false;
     }
 
-    // If length difference is too large, it's not typosquatting
     if max_len - min_len > 2 {
         return false;
     }
 
-    // If one name is a prefix/suffix of the other with a separator, it's a variant
-    // e.g. "lodash" and "lodash-es", "react" and "react-dom"
     if a.starts_with(b) || b.starts_with(a) {
         let longer = if len_a > len_b { a } else { b };
         let shorter = if len_a > len_b { b } else { a };
@@ -525,7 +531,6 @@ fn is_suspiciously_similar(a: &str, b: &str) -> bool {
         return false;
     }
 
-    // Tighter thresholds to reduce false positives
     if max_len <= 5 {
         dist == 1
     } else if max_len <= 10 {

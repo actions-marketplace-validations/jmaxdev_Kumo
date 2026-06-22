@@ -12,7 +12,6 @@ if (!versionMatch) {
 }
 
 const currentVersion = versionMatch[1];
-// Semver regex: major.minor.patch[-prerelease]
 const semverRegex = /^(\d+)\.(\d+)\.(\d+)(?:-([\w\d.-]+))?$/;
 const match = currentVersion.match(semverRegex);
 

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone)]
 pub struct ShieldManager {
@@ -29,7 +29,6 @@ impl ShieldManager {
             fs::create_dir_all(parent)?;
         }
 
-        // VULN-3: Symlink attack prevention
         if let Ok(metadata) = fs::symlink_metadata(&self.state_path) {
             if metadata.file_type().is_symlink() {
                 let _ = fs::remove_file(&self.state_path);
@@ -37,16 +36,18 @@ impl ShieldManager {
         }
 
         let state_str = if active { "on" } else { "off" };
-        
-        // VULN-5: Atomic write
+
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let tmp_path = self.state_path.with_extension(format!("tmp-{}-{}", std::process::id(), now));
-        
+        let tmp_path =
+            self.state_path
+                .with_extension(format!("tmp-{}-{}", std::process::id(), now));
+
         fs::write(&tmp_path, state_str).context("Failed to write shield state temp file")?;
-        fs::rename(&tmp_path, &self.state_path).context("Failed to atomically rename shield state")?;
+        fs::rename(&tmp_path, &self.state_path)
+            .context("Failed to atomically rename shield state")?;
 
         Ok(())
     }
@@ -57,7 +58,6 @@ impl ShieldManager {
         }
         let metadata = fs::symlink_metadata(path)?;
         if metadata.file_type().is_symlink() {
-            // We do not shield the symlink itself, or we might follow it and shield unintended target
             return Ok(());
         }
         let mut perms = metadata.permissions();
@@ -88,7 +88,7 @@ impl ShieldManager {
         if !path.exists() {
             return Ok(());
         }
-        
+
         let metadata = fs::symlink_metadata(path)?;
         let mut perms = metadata.permissions();
         if perms.readonly() {
@@ -110,7 +110,7 @@ impl ShieldManager {
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -118,7 +118,7 @@ impl ShieldManager {
         if !path.exists() {
             return Ok(());
         }
-        
+
         let metadata = fs::symlink_metadata(path)?;
         let mut perms = metadata.permissions();
         if !perms.readonly() {
@@ -140,7 +140,7 @@ impl ShieldManager {
                 }
             }
         }
-        
+
         Ok(())
     }
 }

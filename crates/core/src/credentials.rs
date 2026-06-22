@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct RegistryCredential {
@@ -48,7 +48,9 @@ pub fn get_token(registry_url: &str) -> Option<String> {
 pub fn set_credential(registry_url: &str, username: String, token: String) -> Result<()> {
     let mut creds = load_credentials()?;
     let normalized = registry_url.trim_end_matches('/').to_string();
-    creds.registries.insert(normalized, RegistryCredential { token, username });
+    creds
+        .registries
+        .insert(normalized, RegistryCredential { token, username });
     save_credentials(&creds)?;
     Ok(())
 }

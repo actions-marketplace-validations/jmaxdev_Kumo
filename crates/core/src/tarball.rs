@@ -11,11 +11,14 @@ use tokio::sync::mpsc;
 use tokio_util::io::SyncIoBridge;
 
 pub fn verify_shasum(tarball_data: &[u8], expected_shasum: &str) -> Result<()> {
-    use sha1::{Sha1, Digest};
+    use sha1::{Digest, Sha1};
     let mut hasher = Sha1::new();
     hasher.update(tarball_data);
     let result = hasher.finalize();
-    let actual_shasum = result.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+    let actual_shasum = result
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
     if actual_shasum != expected_shasum {
         anyhow::bail!(
             "Tarball integrity check failed!\n  Expected SHA-1: {}\n  Actual SHA-1:   {}\n  This could indicate a corrupted download or a supply chain attack.",
@@ -149,7 +152,6 @@ pub fn pack_directory(dir: &std::path::Path) -> Result<Vec<u8>> {
     use flate2::Compression;
     use ignore::gitignore::GitignoreBuilder;
 
-    // Resolve ignore file to use, in order of precedence: .kignore -> .npmignore -> .gitignore
     let mut ignore_builder = GitignoreBuilder::new(dir);
     let kignore = dir.join(".kignore");
     let npmignore = dir.join(".npmignore");
@@ -171,23 +173,23 @@ pub fn pack_directory(dir: &std::path::Path) -> Result<Vec<u8>> {
         }
     }
 
-    let gitignore_matcher = ignore_builder.build()
+    let gitignore_matcher = ignore_builder
+        .build()
         .context("Failed to build gitignore matcher")?;
 
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     {
         let mut builder = tar::Builder::new(&mut encoder);
-        
+
         let walker = walkdir::WalkDir::new(dir)
             .follow_links(false)
             .into_iter()
             .filter_entry(move |e| {
                 let name = e.file_name().to_string_lossy();
-                
-                // 1. Default ignores
-                if name == "node_modules" 
-                    || name == ".git" 
-                    || name == ".kumo" 
+
+                if name == "node_modules"
+                    || name == ".git"
+                    || name == ".kumo"
                     || name == "target"
                     || name == ".DS_Store"
                     || name == "kumo.lock"
@@ -200,17 +202,19 @@ pub fn pack_directory(dir: &std::path::Path) -> Result<Vec<u8>> {
                 {
                     return false;
                 }
-                
-                // 2. Custom ignore files
+
                 if let Ok(rel_path) = e.path().strip_prefix(dir) {
                     if !rel_path.as_os_str().is_empty() {
                         let is_dir = e.path().is_dir();
-                        if gitignore_matcher.matched_path_or_any_parents(rel_path, is_dir).is_ignore() {
+                        if gitignore_matcher
+                            .matched_path_or_any_parents(rel_path, is_dir)
+                            .is_ignore()
+                        {
                             return false;
                         }
                     }
                 }
-                
+
                 true
             });
 
@@ -219,34 +223,41 @@ pub fn pack_directory(dir: &std::path::Path) -> Result<Vec<u8>> {
             let path = entry.path();
             if path.is_file() {
                 let rel_path = path.strip_prefix(dir)?;
-                
+
                 let mut components = vec!["package".to_string()];
                 for comp in rel_path.components() {
                     components.push(comp.as_os_str().to_string_lossy().to_string());
                 }
                 let tar_name = components.join("/");
-                
-                builder.append_path_with_name(path, &tar_name)
-                    .with_context(|| format!("Failed to append file {} to archive", path.display()))?;
+
+                builder
+                    .append_path_with_name(path, &tar_name)
+                    .with_context(|| {
+                        format!("Failed to append file {} to archive", path.display())
+                    })?;
             }
         }
         builder.finish()?;
     }
-    
+
     let tarball_bytes = encoder.finish()?;
     Ok(tarball_bytes)
 }
 
 pub fn calculate_shasum(data: &[u8]) -> String {
-    use sha1::{Sha1, Digest};
+    use sha1::{Digest, Sha1};
     let mut hasher = Sha1::new();
     hasher.update(data);
-    hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect()
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect()
 }
 
 pub fn calculate_integrity(data: &[u8]) -> String {
-    use sha2::{Sha512, Digest};
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use sha2::{Digest, Sha512};
     let mut hasher = Sha512::new();
     hasher.update(data);
     let hash = hasher.finalize();
@@ -254,7 +265,7 @@ pub fn calculate_integrity(data: &[u8]) -> String {
 }
 
 pub fn base64_encode(data: &[u8]) -> String {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
     STANDARD.encode(data)
 }
 
@@ -266,7 +277,7 @@ mod tests {
     fn test_verify_shasum() {
         let data = b"hello world";
         let expected = "2aae6c35c94fcfb415dbe95f408b9ce91ee846ed";
-        
+
         assert!(verify_shasum(data, expected).is_ok());
         assert!(verify_shasum(data, "wrong").is_err());
     }
@@ -277,31 +288,31 @@ mod tests {
         let temp = tempfile::tempdir()?;
         let path = temp.path();
 
-        // Create standard files
         fs::write(path.join("package.json"), "{}")?;
         fs::create_dir_all(path.join("src"))?;
         fs::write(path.join("src").join("index.js"), "console.log('hello');")?;
 
-        // Create default ignored files/directories
         fs::create_dir_all(path.join("node_modules").join("dep"))?;
-        fs::write(path.join("node_modules").join("dep").join("index.js"), "ignored")?;
+        fs::write(
+            path.join("node_modules").join("dep").join("index.js"),
+            "ignored",
+        )?;
         fs::write(path.join("kumo.config.json"), "{}")?;
         fs::write(path.join(".env"), "SECRET=1")?;
         fs::write(path.join(".env.local"), "SECRET=2")?;
         fs::write(path.join(".env.test"), "SECRET=3")?;
 
-        // Create custom ignored files/directories
         fs::create_dir_all(path.join("ignored_by_custom"))?;
-        fs::write(path.join("ignored_by_custom").join("some_file.js"), "ignored")?;
+        fs::write(
+            path.join("ignored_by_custom").join("some_file.js"),
+            "ignored",
+        )?;
         fs::write(path.join("src").join("temp.log"), "some logs")?;
 
-        // Create .kignore
         fs::write(path.join(".kignore"), "ignored_by_custom/\n*.log\n")?;
 
-        // Pack the directory
         let tarball_bytes = pack_directory(path)?;
 
-        // Inspect tarball
         let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(&tarball_bytes[..]));
         let mut packed_paths = std::collections::HashSet::new();
         for entry in archive.entries()? {
@@ -310,7 +321,6 @@ mod tests {
             packed_paths.insert(path_str);
         }
 
-        // Verify matches
         assert!(packed_paths.contains("package/package.json"));
         assert!(packed_paths.contains("package/src/index.js"));
         assert!(packed_paths.contains("package/.kignore"));
@@ -336,9 +346,7 @@ mod tests {
         fs::write(path.join("npm-ignored.js"), "ignored")?;
         fs::write(path.join("git-ignored.js"), "ignored")?;
 
-        // .npmignore ignores npm-ignored.js
         fs::write(path.join(".npmignore"), "npm-ignored.js\n")?;
-        // .gitignore ignores git-ignored.js
         fs::write(path.join(".gitignore"), "git-ignored.js\n")?;
 
         let tarball_bytes = pack_directory(path)?;
@@ -350,8 +358,6 @@ mod tests {
             packed_paths.insert(path_str);
         }
 
-        // Since .npmignore is present, .gitignore should be ignored completely.
-        // Thus, npm-ignored.js is ignored, but git-ignored.js is INCLUDED.
         assert!(!packed_paths.contains("package/npm-ignored.js"));
         assert!(packed_paths.contains("package/git-ignored.js"));
 
@@ -367,7 +373,6 @@ mod tests {
         fs::write(path.join("package.json"), "{}")?;
         fs::write(path.join("git-ignored.js"), "ignored")?;
 
-        // Only .gitignore is present
         fs::write(path.join(".gitignore"), "git-ignored.js\n")?;
 
         let tarball_bytes = pack_directory(path)?;

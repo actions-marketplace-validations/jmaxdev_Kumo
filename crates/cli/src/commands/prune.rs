@@ -91,7 +91,6 @@ async fn prune_cache() -> Result<()> {
     let mut count: u64 = 0;
     let mut size: u64 = 0;
 
-    // Walk the cache directory and count files before deleting
     fn count_files(dir: &std::path::Path, count: &mut u64, size: &mut u64) {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
@@ -176,7 +175,6 @@ async fn prune_deps(full: bool, remove_all: bool, path: Option<String>) -> Resul
                             let name_str = name.to_string_lossy();
                             if name_str == "node_modules" || name_str == "dependencies" || name_str == deps_name {
                                 targets.push(path);
-                                // Do not recurse inside a target we are going to delete
                             } else if name_str != ".git" && name_str != ".kumo" && name_str != "target" {
                                 find_targets(&path, deps_name, full, targets);
                             }

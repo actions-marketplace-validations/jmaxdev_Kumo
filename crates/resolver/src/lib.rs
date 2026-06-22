@@ -25,13 +25,11 @@ impl Resolver {
 
         let mut registry_raw = "kumo".to_string();
 
-        // 1. Try environment variable
         if let Ok(env_reg) = std::env::var("KUMO_REGISTRY") {
             if !env_reg.trim().is_empty() {
                 registry_raw = env_reg.trim().to_string();
             }
         } else {
-            // 2. Try local kumo.config.json or global ~/.kumo/kumo.config.json
             let mut found = false;
             if let Ok(curr_dir) = std::env::current_dir() {
                 let local_path = curr_dir.join("kumo.config.json");
@@ -223,10 +221,20 @@ impl Resolver {
 
                 if response.dist_tags.contains_key(range) {
                     let v_str = response.dist_tags.get(range).unwrap();
-                    anyhow::bail!("Version data for {} not found (resolved from tag {})", v_str, range);
+                    anyhow::bail!(
+                        "Version data for {} not found (resolved from tag {})",
+                        v_str,
+                        range
+                    );
                 } else if range == "latest" || range == "*" || range == "" {
-                    let v_str = response.dist_tags.get("latest").ok_or_else(|| anyhow!("No latest tag found for {}", name))?;
-                    anyhow::bail!("Version data for {} not found (resolved from latest tag)", v_str);
+                    let v_str = response
+                        .dist_tags
+                        .get("latest")
+                        .ok_or_else(|| anyhow!("No latest tag found for {}", name))?;
+                    anyhow::bail!(
+                        "Version data for {} not found (resolved from latest tag)",
+                        v_str
+                    );
                 } else {
                     anyhow::bail!("No version matching {} found for {}", range, name);
                 }

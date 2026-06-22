@@ -376,7 +376,6 @@ pub async fn execute_interactive() -> Result<()> {
     let selected_script = &keys[selection];
     println!("Running script '{}'...", selected_script);
     
-    // Call the normal execute function with no extra args
     let args = Vec::new();
     execute(selected_script, args).await
 }

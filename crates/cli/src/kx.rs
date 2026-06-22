@@ -17,10 +17,17 @@ struct KxCli {
     #[arg(long, help = "Prune cached kx packages older than 7 days")]
     prune: bool,
 
-    #[arg(long = "full-prune", help = "When pruning, delete all packages instead of only those older than 7 days")]
+    #[arg(
+        long = "full-prune",
+        help = "When pruning, delete all packages instead of only those older than 7 days"
+    )]
     full_prune: bool,
 
-    #[arg(short = 'p', long = "package", help = "Package(s) to install for the execution (e.g. kx -p typescript tsc)")]
+    #[arg(
+        short = 'p',
+        long = "package",
+        help = "Package(s) to install for the execution (e.g. kx -p typescript tsc)"
+    )]
     packages: Vec<String>,
 
     #[arg(required_unless_present_any = ["prune", "full_prune", "version", "help"])]
@@ -69,7 +76,7 @@ async fn main() -> Result<()> {
     }
 
     let update_check_handle = tokio::spawn(common::check_for_new_version());
-    
+
     let (store, security, resolver) = common::init_components().await?;
     let res = inner_main(cli, &store, &security, &resolver).await;
 
@@ -80,7 +87,12 @@ async fn main() -> Result<()> {
     res
 }
 
-async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &security::SecurityEngine, resolver: &Resolver) -> Result<()> {
+async fn inner_main(
+    mut cli: KxCli,
+    store: &kumo_core::Store,
+    security: &security::SecurityEngine,
+    resolver: &Resolver,
+) -> Result<()> {
     let binary_arg = cli.binary.clone().unwrap();
 
     let (binary, target_version) = if binary_arg == "create" {
@@ -89,7 +101,7 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
         }
         let target = cli.args.remove(0);
         let (pkg_part, ver_part) = common::parse_package_arg(&target);
-        
+
         let binary_name = if pkg_part.starts_with('@') {
             if let Some(slash_idx) = pkg_part.find('/') {
                 let (scope, name) = pkg_part.split_at(slash_idx);
@@ -105,7 +117,6 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
     } else {
         common::parse_package_arg(&binary_arg)
     };
-
 
     let deps_dir_name = common::get_deps_dir();
     let current_dir = std::env::current_dir()?;
@@ -123,7 +134,12 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
     }
 
     let possible_bins = if cfg!(target_os = "windows") {
-        vec![format!("{}.cmd", binary), format!("{}.exe", binary), format!("{}.bat", binary), binary.clone()]
+        vec![
+            format!("{}.cmd", binary),
+            format!("{}.exe", binary),
+            format!("{}.bat", binary),
+            binary.clone(),
+        ]
     } else {
         vec![binary.clone()]
     };
@@ -136,7 +152,6 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
             }
         }
     }
-
 
     let mut root_deps = HashMap::new();
     let main_package_name = if !cli.packages.is_empty() {
@@ -156,8 +171,10 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
     }
 
     let lockfile = resolver.resolve_tree(&root_deps).await?;
-    
-    let main_pkg_id = lockfile.packages.keys()
+
+    let main_pkg_id = lockfile
+        .packages
+        .keys()
         .find(|k| {
             let (k_name, _) = common::parse_package_id(k);
             k_name == main_package_name
@@ -184,7 +201,6 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
                     if map.contains_key(&un_scoped) {
                         exec_bin_name = un_scoped;
                     } else if map.contains_key(&exec_bin_name) {
-
                     } else if let Some(first_key) = map.keys().next() {
                         if map.len() == 1 {
                             exec_bin_name = first_key.to_string();
@@ -196,11 +212,20 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
         }
     }
 
-    let kx_dir = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?.join(".kumo").join("kx").join(format!("{}@{}", binary, version));
+    let kx_dir = dirs::home_dir()
+        .ok_or_else(|| anyhow!("Could not determine home directory"))?
+        .join(".kumo")
+        .join("kx")
+        .join(format!("{}@{}", binary, version));
     let global_bin_dir = kx_dir.join(".bin");
-    
+
     let exec_possible_bins = if cfg!(target_os = "windows") {
-        vec![format!("{}.cmd", exec_bin_name), format!("{}.exe", exec_bin_name), format!("{}.bat", exec_bin_name), exec_bin_name.clone()]
+        vec![
+            format!("{}.cmd", exec_bin_name),
+            format!("{}.exe", exec_bin_name),
+            format!("{}.bat", exec_bin_name),
+            exec_bin_name.clone(),
+        ]
     } else {
         vec![exec_bin_name.clone()]
     };
@@ -216,7 +241,6 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
         let _ = tokio::fs::remove_dir_all(&kx_dir).await;
     }
 
-
     println!("Package '{}' not found in cache.", binary);
     print!("Do you want to install and execute it using Kumo? (y/N): ");
     use std::io::Write;
@@ -226,15 +250,30 @@ async fn inner_main(mut cli: KxCli, store: &kumo_core::Store, security: &securit
     std::io::stdin().read_line(&mut input)?;
 
     if input.trim().to_lowercase() == "y" {
-        let (bin_path, bin_dir) = install_and_get_bin_with_lockfile(store, resolver, security, &binary, &exec_bin_name, &lockfile, &kx_dir).await?;
+        let (bin_path, bin_dir) = install_and_get_bin_with_lockfile(
+            store,
+            resolver,
+            security,
+            &binary,
+            &exec_bin_name,
+            &lockfile,
+            &kx_dir,
+        )
+        .await?;
         execute_binary(&bin_path, cli.args, &bin_dir)
     } else {
         anyhow::bail!("Execution cancelled.");
     }
 }
 
-fn execute_binary(path: &std::path::Path, args: Vec<String>, bin_dir: &std::path::Path) -> Result<()> {
-    let mut command = if path.extension().and_then(|s| s.to_str()) == Some("cmd") || path.extension().and_then(|s| s.to_str()) == Some("bat") {
+fn execute_binary(
+    path: &std::path::Path,
+    args: Vec<String>,
+    bin_dir: &std::path::Path,
+) -> Result<()> {
+    let mut command = if path.extension().and_then(|s| s.to_str()) == Some("cmd")
+        || path.extension().and_then(|s| s.to_str()) == Some("bat")
+    {
         let mut c = Command::new("cmd");
         c.arg("/c").arg(path);
         c
@@ -243,15 +282,13 @@ fn execute_binary(path: &std::path::Path, args: Vec<String>, bin_dir: &std::path
     };
 
     command.args(args);
-    
 
     let old_path = std::env::var_os("PATH").unwrap_or_default();
     let mut paths = vec![bin_dir.to_path_buf()];
     paths.extend(std::env::split_paths(&old_path));
     let new_path = std::env::join_paths(paths)?;
-    
+
     command.env("PATH", new_path);
-    
 
     if let Some(parent) = bin_dir.parent() {
         let nm_path = parent.join("node_modules");
@@ -262,11 +299,11 @@ fn execute_binary(path: &std::path::Path, args: Vec<String>, bin_dir: &std::path
 
     let mut child = command.spawn()?;
     let status = child.wait()?;
-    
+
     if !status.success() {
         std::process::exit(status.code().unwrap_or(1));
     }
-    
+
     Ok(())
 }
 
@@ -281,7 +318,6 @@ async fn install_and_get_bin_with_lockfile(
     lockfile: &Lockfile,
     kx_dir: &std::path::PathBuf,
 ) -> Result<(std::path::PathBuf, std::path::PathBuf)> {
-
     println!("Scanning for vulnerabilities...");
     for (pkg_name, pkg) in &lockfile.packages {
         let version = pkg.resolution.tarball.split('/').last().unwrap_or("");
@@ -298,7 +334,12 @@ async fn install_and_get_bin_with_lockfile(
     let nm_dir = kx_dir.join("node_modules");
 
     let possible_bins = if cfg!(target_os = "windows") {
-        vec![format!("{}.cmd", exec_bin_name), format!("{}.exe", exec_bin_name), format!("{}.bat", exec_bin_name), exec_bin_name.to_string()]
+        vec![
+            format!("{}.cmd", exec_bin_name),
+            format!("{}.exe", exec_bin_name),
+            format!("{}.bat", exec_bin_name),
+            exec_bin_name.to_string(),
+        ]
     } else {
         vec![exec_bin_name.to_string()]
     };
@@ -315,58 +356,69 @@ async fn install_and_get_bin_with_lockfile(
         println!("Installing {} and dependencies...", name);
         let _ = tokio::fs::remove_dir_all(&kx_dir).await;
         tokio::fs::create_dir_all(&bin_dir).await?;
-        
+
         let cpus = num_cpus::get();
         let concurrent_limit = cpus * 2;
 
-        let exec_version = lockfile.dependencies.get(name).map(|v| v.as_str()).unwrap_or("latest");
+        let exec_version = lockfile
+            .dependencies
+            .get(name)
+            .map(|v| v.as_str())
+            .unwrap_or("latest");
         let exec_pkg_key = format!("{}@{}", name, exec_version);
-        let exec_deps = lockfile.packages.get(&exec_pkg_key).and_then(|p| p.dependencies.as_ref());
-
-        let winners: HashMap<String, String> = lockfile
+        let exec_deps = lockfile
             .packages
-            .keys()
-            .fold(HashMap::new(), |mut acc, key| {
-                let (name, version) = common::parse_package_id(key);
-                
-                let is_better = if let Some(existing_key) = acc.get(&name) {
-                    let (_, existing_version) = common::parse_package_id(existing_key);
-                    
-                    let mut this_matches = false;
-                    let mut existing_matches = false;
-                    if let Some(deps) = exec_deps {
-                        if let Some(range) = deps.get(&name) {
-                            if let Ok(req) = semver::VersionReq::parse(range) {
-                                if let Ok(v) = semver::Version::parse(&version) {
-                                    this_matches = req.matches(&v);
-                                }
-                                if let Ok(ev) = semver::Version::parse(&existing_version) {
-                                    existing_matches = req.matches(&ev);
+            .get(&exec_pkg_key)
+            .and_then(|p| p.dependencies.as_ref());
+
+        let winners: HashMap<String, String> =
+            lockfile
+                .packages
+                .keys()
+                .fold(HashMap::new(), |mut acc, key| {
+                    let (name, version) = common::parse_package_id(key);
+
+                    let is_better = if let Some(existing_key) = acc.get(&name) {
+                        let (_, existing_version) = common::parse_package_id(existing_key);
+
+                        let mut this_matches = false;
+                        let mut existing_matches = false;
+                        if let Some(deps) = exec_deps {
+                            if let Some(range) = deps.get(&name) {
+                                if let Ok(req) = semver::VersionReq::parse(range) {
+                                    if let Ok(v) = semver::Version::parse(&version) {
+                                        this_matches = req.matches(&v);
+                                    }
+                                    if let Ok(ev) = semver::Version::parse(&existing_version) {
+                                        existing_matches = req.matches(&ev);
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    if this_matches && !existing_matches {
-                        true
-                    } else if !this_matches && existing_matches {
-                        false
-                    } else {
-                        if let (Ok(v1), Ok(v2)) = (semver::Version::parse(&version), semver::Version::parse(&existing_version)) {
-                            v1 > v2
+                        if this_matches && !existing_matches {
+                            true
+                        } else if !this_matches && existing_matches {
+                            false
                         } else {
-                            version > existing_version
+                            if let (Ok(v1), Ok(v2)) = (
+                                semver::Version::parse(&version),
+                                semver::Version::parse(&existing_version),
+                            ) {
+                                v1 > v2
+                            } else {
+                                version > existing_version
+                            }
                         }
-                    }
-                } else {
-                    true
-                };
+                    } else {
+                        true
+                    };
 
-                if is_better {
-                    acc.insert(name, key.clone());
-                }
-                acc
-            });
+                    if is_better {
+                        acc.insert(name, key.clone());
+                    }
+                    acc
+                });
 
         let packages_to_install: Vec<(String, resolver::LockedPackage)> = winners
             .values()
@@ -374,48 +426,50 @@ async fn install_and_get_bin_with_lockfile(
             .collect();
 
         let client = reqwest::Client::new();
-        
-        use futures::StreamExt;
-        let stream = futures::stream::iter(packages_to_install).map(|(pkg_id, pkg)| {
-            let store = store.clone();
-            let nm_dir = nm_dir.clone();
-            let bin_dir = bin_dir.clone();
-            let client = client.clone();
 
-            async move {
-                let (pkg_name, _) = common::parse_package_id(&pkg_id);
-                let dest = nm_dir.join(pkg_name.replace('/', std::path::MAIN_SEPARATOR_STR));
-                
-                let response = client.get(&pkg.resolution.tarball).send().await?;
-                let bytes = response.bytes().await?;
-                
-                let file_map = kumo_core::tarball::extract_and_store(&store, &bytes).await?;
-                kumo_core::package::link_package(&store, &dest, &file_map).await?;
-                
-                if let Some(bin) = &pkg.bin {
-                    match bin {
-                        serde_json::Value::String(path) => {
-                            let shim_name = if pkg_name.contains('/') {
-                                pkg_name.split('/').last().unwrap_or(&pkg_name)
-                            } else {
-                                &pkg_name
-                            };
-                            create_shim(&bin_dir, shim_name, &dest.join(path)).await?;
-                        }
-                        serde_json::Value::Object(map) => {
-                            for (cmd_name, path) in map {
-                                if let Some(p) = path.as_str() {
-                                    create_shim(&bin_dir, &cmd_name, &dest.join(p)).await?;
+        use futures::StreamExt;
+        let stream = futures::stream::iter(packages_to_install)
+            .map(|(pkg_id, pkg)| {
+                let store = store.clone();
+                let nm_dir = nm_dir.clone();
+                let bin_dir = bin_dir.clone();
+                let client = client.clone();
+
+                async move {
+                    let (pkg_name, _) = common::parse_package_id(&pkg_id);
+                    let dest = nm_dir.join(pkg_name.replace('/', std::path::MAIN_SEPARATOR_STR));
+
+                    let response = client.get(&pkg.resolution.tarball).send().await?;
+                    let bytes = response.bytes().await?;
+
+                    let file_map = kumo_core::tarball::extract_and_store(&store, &bytes).await?;
+                    kumo_core::package::link_package(&store, &dest, &file_map).await?;
+
+                    if let Some(bin) = &pkg.bin {
+                        match bin {
+                            serde_json::Value::String(path) => {
+                                let shim_name = if pkg_name.contains('/') {
+                                    pkg_name.split('/').last().unwrap_or(&pkg_name)
+                                } else {
+                                    &pkg_name
+                                };
+                                create_shim(&bin_dir, shim_name, &dest.join(path)).await?;
+                            }
+                            serde_json::Value::Object(map) => {
+                                for (cmd_name, path) in map {
+                                    if let Some(p) = path.as_str() {
+                                        create_shim(&bin_dir, &cmd_name, &dest.join(p)).await?;
+                                    }
                                 }
                             }
+                            _ => {}
                         }
-                        _ => {}
                     }
+
+                    Ok::<(), anyhow::Error>(())
                 }
-                
-                Ok::<(), anyhow::Error>(())
-            }
-        }).buffer_unordered(concurrent_limit);
+            })
+            .buffer_unordered(concurrent_limit);
 
         let mut results = stream;
         while let Some(res) = results.next().await {
@@ -464,10 +518,14 @@ async fn prune_kx_cache(full: bool) -> Result<()> {
             let path = entry.path();
             if path.is_dir() {
                 if let Ok(metadata) = std::fs::metadata(&path) {
-                    let accessed = metadata.accessed().unwrap_or_else(|_| {
-                        metadata.modified().unwrap_or(now)
-                    });
-                    if now.duration_since(accessed).map(|d| d.as_secs() > 7 * 24 * 3600).unwrap_or(false) {
+                    let accessed = metadata
+                        .accessed()
+                        .unwrap_or_else(|_| metadata.modified().unwrap_or(now));
+                    if now
+                        .duration_since(accessed)
+                        .map(|d| d.as_secs() > 7 * 24 * 3600)
+                        .unwrap_or(false)
+                    {
                         let _ = tokio::fs::remove_dir_all(&path).await;
                         count += 1;
                     }

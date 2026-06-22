@@ -9,7 +9,12 @@ pub struct SandboxConfig {
 pub struct SandboxRunner;
 
 impl SandboxRunner {
-    pub fn create_command(pkg_dir: &Path, script: &str, allow_network: bool, proxy_port: Option<u16>) -> Command {
+    pub fn create_command(
+        pkg_dir: &Path,
+        script: &str,
+        allow_network: bool,
+        proxy_port: Option<u16>,
+    ) -> Command {
         #[cfg(target_os = "linux")]
         {
             Self::create_linux(pkg_dir, script, allow_network, proxy_port)
@@ -39,11 +44,11 @@ impl SandboxRunner {
                 let mut info = job.query_extended_limit_info().unwrap_or_default();
                 let _ = info.limit_working_memory(0, 512 * 1024 * 1024);
                 let _ = job.set_extended_limit_info(&mut info);
-                
+
                 use std::os::windows::io::AsRawHandle;
                 let handle = child.as_raw_handle();
                 let _ = job.assign_process(handle as isize);
-                
+
                 return child.wait();
             }
             child.wait()
@@ -59,11 +64,23 @@ impl SandboxRunner {
         let _ = std::fs::create_dir_all(&fake_home);
 
         let allowed_vars = [
-            "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC",
-            "TEMP", "TMP", "TMPDIR",
-            "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS",
-            "LANG", "LC_ALL", "LC_CTYPE", "TERM", "COLORTERM",
-            "NODE_PATH", "NODE_NO_WARNINGS",
+            "PATH",
+            "PATHEXT",
+            "SYSTEMROOT",
+            "WINDIR",
+            "COMSPEC",
+            "TEMP",
+            "TMP",
+            "TMPDIR",
+            "PROCESSOR_ARCHITECTURE",
+            "NUMBER_OF_PROCESSORS",
+            "LANG",
+            "LC_ALL",
+            "LC_CTYPE",
+            "TERM",
+            "COLORTERM",
+            "NODE_PATH",
+            "NODE_NO_WARNINGS",
         ];
 
         let mut preserved: Vec<(String, String)> = Vec::new();
@@ -86,7 +103,12 @@ impl SandboxRunner {
     }
 
     #[cfg(target_os = "linux")]
-    fn create_linux(pkg_dir: &Path, script: &str, allow_network: bool, proxy_port: Option<u16>) -> Command {
+    fn create_linux(
+        pkg_dir: &Path,
+        script: &str,
+        allow_network: bool,
+        proxy_port: Option<u16>,
+    ) -> Command {
         let has_bwrap = Command::new("which")
             .arg("bwrap")
             .status()
@@ -109,14 +131,28 @@ impl SandboxRunner {
             }
         }
 
-        cmd.arg("--ro-bind").arg("/usr").arg("/usr")
-           .arg("--ro-bind").arg("/lib").arg("/lib")
-           .arg("--ro-bind").arg("/lib64").arg("/lib64")
-           .arg("--ro-bind").arg("/bin").arg("/bin")
-           .arg("--ro-bind").arg("/sbin").arg("/sbin")
-           .arg("--ro-bind").arg("/etc").arg("/etc")
-           .arg("--proc").arg("/proc")
-           .arg("--dev").arg("/dev");
+        cmd.arg("--ro-bind")
+            .arg("/usr")
+            .arg("/usr")
+            .arg("--ro-bind")
+            .arg("/lib")
+            .arg("/lib")
+            .arg("--ro-bind")
+            .arg("/lib64")
+            .arg("/lib64")
+            .arg("--ro-bind")
+            .arg("/bin")
+            .arg("/bin")
+            .arg("--ro-bind")
+            .arg("/sbin")
+            .arg("/sbin")
+            .arg("--ro-bind")
+            .arg("/etc")
+            .arg("/etc")
+            .arg("--proc")
+            .arg("/proc")
+            .arg("--dev")
+            .arg("/dev");
 
         cmd.arg("--bind").arg(pkg_dir).arg(pkg_dir);
         cmd.arg("--chdir").arg(pkg_dir);
@@ -129,13 +165,20 @@ impl SandboxRunner {
     }
 
     #[cfg(target_os = "macos")]
-    fn create_macos(pkg_dir: &Path, script: &str, allow_network: bool, proxy_port: Option<u16>) -> Command {
+    fn create_macos(
+        pkg_dir: &Path,
+        script: &str,
+        allow_network: bool,
+        proxy_port: Option<u16>,
+    ) -> Command {
         let mut cmd = Command::new("sandbox-exec");
         let network_rule = if allow_network {
             "(allow network*)".to_string()
         } else if let Some(port) = proxy_port {
-            // Allow connections to the local proxy port
-            format!(r#"(allow network-outbound (local ip "127.0.0.1:{}"))"#, port)
+            format!(
+                r#"(allow network-outbound (local ip "127.0.0.1:{}"))"#,
+                port
+            )
         } else {
             "(deny network*)".to_string()
         };
@@ -165,7 +208,12 @@ impl SandboxRunner {
     }
 
     #[cfg(target_os = "windows")]
-    fn create_windows(pkg_dir: &Path, script: &str, allow_network: bool, proxy_port: Option<u16>) -> Command {
+    fn create_windows(
+        pkg_dir: &Path,
+        script: &str,
+        allow_network: bool,
+        proxy_port: Option<u16>,
+    ) -> Command {
         let mut cmd = Command::new("cmd");
         cmd.arg("/c").arg(script);
         cmd.current_dir(pkg_dir);
@@ -183,7 +231,12 @@ impl SandboxRunner {
     }
 
     #[allow(dead_code)]
-    fn create_fallback(pkg_dir: &Path, script: &str, allow_network: bool, proxy_port: Option<u16>) -> Command {
+    fn create_fallback(
+        pkg_dir: &Path,
+        script: &str,
+        allow_network: bool,
+        proxy_port: Option<u16>,
+    ) -> Command {
         let mut cmd = if cfg!(windows) {
             let mut c = Command::new("cmd");
             c.arg("/c").arg(script);

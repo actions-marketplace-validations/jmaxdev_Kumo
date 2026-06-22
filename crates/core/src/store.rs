@@ -14,7 +14,7 @@ pub struct Store {
 
 impl Store {
     pub fn new(root: PathBuf) -> Self {
-        Self { 
+        Self {
             root,
             shield: ShieldManager::new(),
         }

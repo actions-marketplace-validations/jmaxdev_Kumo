@@ -34,7 +34,6 @@ pub async fn execute(action: ShieldAction) -> Result<()> {
             
             println!("🛡️  Kumo Shield activated!");
             
-            // Retroactively shield the global store and cache
             let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
             let objects_dir = home.join(".kumo").join("store").join("objects");
             let metadata_dir = home.join(".kumo").join("store").join("metadata");
@@ -51,7 +50,6 @@ pub async fn execute(action: ShieldAction) -> Result<()> {
                 let _ = shield.shield_dir_recursive(&cache_dir);
             }
 
-            // Retroactively shield local project files
             if let Ok(cwd) = std::env::current_dir() {
                 for file in ["kumo.lock", "kumo.json", "kumo.config.json"] {
                     let path = cwd.join(file);
