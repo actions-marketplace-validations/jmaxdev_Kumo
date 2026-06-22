@@ -425,7 +425,10 @@ async fn install_and_get_bin_with_lockfile(
             .filter_map(|key| lockfile.packages.get(key).map(|p| (key.clone(), p.clone())))
             .collect();
 
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .user_agent("kumo/pm")
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
 
         use futures::StreamExt;
         let stream = futures::stream::iter(packages_to_install)

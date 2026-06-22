@@ -26,7 +26,7 @@ pub async fn execute(include_pre: bool, target_version: Option<String>) -> Resul
     }
 
     let client = reqwest::Client::builder()
-        .user_agent("kumo-pkg-manager")
+        .user_agent("kumo/pm")
         .build()?;
 
     let url = if include_pre || target_version.is_some() {

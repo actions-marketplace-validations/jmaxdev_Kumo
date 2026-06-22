@@ -111,7 +111,7 @@ pub async fn check_for_new_version() -> Option<String> {
 
     if now - last_check > 86400 || cached_latest.is_empty() {
         let client = reqwest::Client::builder()
-            .user_agent("kumo-pkg-manager")
+            .user_agent("kumo/pm")
             .timeout(std::time::Duration::from_secs(2))
             .build()
             .ok()?;

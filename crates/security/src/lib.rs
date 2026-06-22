@@ -87,7 +87,10 @@ pub struct SecurityEngine {
 
 impl SecurityEngine {
     pub fn new(policy: Policy) -> Self {
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .user_agent("kumo/pm")
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         let popular_packages = Self::load_popular_packages_sync();
         Self {
             policy,
