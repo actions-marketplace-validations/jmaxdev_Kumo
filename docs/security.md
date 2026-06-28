@@ -28,6 +28,9 @@ kumo config init
 | `protected_packages` | Array | A custom list of highly sensitive packages to protect from typosquatting (e.g., `["react", "next"]`). If empty, only existing project dependencies are protected. | `[]` |
 | `allowed_domains` | Array | A whitelist of domains from which Kumo is allowed to download package tarballs, preventing lockfile registry poisoning. | `["github.com", "objects.githubusercontent.com", "registry.npmjs.org", "nodejs.org", "localhost"]` |
 | `registry` | String | Default registry to use. Supported values are `"npm"`, `"kumo"`, or any custom HTTP/HTTPS URL. | `"npm"` |
+| `useNodeModules` | Boolean | If `true`, Kumo will link dependencies into a `node_modules` directory natively for maximum compatibility with standard tools, rather than the default `dependencies` directory. | `false` |
+| `cache` | Object | Configures custom inputs and outputs for script caching (`kumo run`). See [caching documentation](caching.md) for schema details. | `{}` |
+| `AllowedImportHost` | Array | A whitelist of allowed hostnames for HTTPS module imports in scripts (e.g. `["esm.sh"]`). If empty or omitted, all URL imports are blocked by default. | `[]` |
 
 ## Mitigating Supply Chain Attacks
 
@@ -49,7 +52,7 @@ To guarantee absolute protection, when scripts are allowed, Kumo executes them i
 
 * **Linux Isolation (Bubblewrap):** If `bwrap` is available, Kumo spawns the script in an isolated namespace (`--unshare-all`). It mounts the base system as read-only (`--ro-bind`) and restricts write access *exclusively* to the package's local directory. It also unshares and disables the network namespace (`--unshare-net`).
 * **macOS Isolation (Apple Sandbox):** Kumo leverages the kernel-level `sandbox-exec` utility with a strict custom Scheme profile (`(deny default)`). It denies all network actions and limits file system write permissions solely to the target package directory and system temp folders.
-* **Windows Environment & Network Virtualization:** To protect files on Windows without requiring administrative privileges, Kumo redirects the `HOME`, `USERPROFILE`, `APPDATA`, and `LOCALAPPDATA` environment variables to a temporary, empty sandbox folder. Any attempt by a malicious script to resolve the user's home directories to steal `.ssh` or `.aws` keys will only see an empty cage. It also disables outgoing internet requests by poisoning standard connection variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NODE_TLS_REJECT_UNAUTHORIZED`).
+* **Windows Environment & Network Virtualization:** To protect files on Windows without requiring administrative privileges, Kumo redirects the `HOME`, `USERPROFILE`, `APPDATA`, and `LOCALAPPDATA` environment variables to a temporary, empty sandbox folder. Any attempt by a malicious script to resolve the user's home directories to steal `.ssh` or `.aws` keys will only see an empty cage. It also disables outgoing internet requests by poisoning standard connection variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NODE_TLS_REJECT_UNAUTHORIZED`). Additionally, sandboxed processes on Windows are associated with a native Job Object (`win32job`) that restricts their working memory limit to **512 MB**, preventing memory exhaustion/DoS attacks.
 * **Environment Variable Whitelisting:** Across all operating systems, Kumo completely clears the host environment variables before spawning the script. It uses a strict whitelist (allowing only essential system variables like `PATH`, `TEMP`, and Node-specific ones) instead of a blacklist. This guarantees that no custom secrets, API keys, or cloud tokens are ever exposed to third-party scripts.
 
 ### 2. Typosquatting Protection (Levenshtein Engine)
@@ -108,3 +111,28 @@ kumo unlock kumo.config.json
 **The Anti-Malware Trap:** Automated scripts and malware operate in the background without a real terminal (TTY). The `unlock` command checks for a genuine interactive terminal session and requires human confirmation (`Are you sure you want to unlock...? (y/N)`). If a script attempts to pipe input (e.g. `echo "y" | kumo unlock ...`), Kumo will detect the lack of a real TTY and immediately reject the request.
 
 Once you have finished editing, simply run `kumo lock` or execute any Kumo installation command to automatically re-seal the files.
+
+### 8. Secure HTTPS Module Loader
+
+When running TypeScript/JavaScript scripts using the `kumo ts exec` execution environment, Kumo registers a secure custom ESM import loader. This loader allows you to directly import remote modules via HTTPS (e.g. `import confetti from "https://esm.sh/canvas-confetti"`) while enforcing strict security rules to prevent common supply chain and network-based exploits:
+
+1. **No Insecure HTTP Imports**: Any attempts to import scripts using the `http://` protocol are immediately blocked to prevent man-in-the-middle (MitM) code injection.
+2. **SSRF and Loopback Protection**: To prevent SSRF (Server-Side Request Forgery) attacks or local privilege escalation, the loader restricts imports from loopback addresses or local machines. Any imports referencing the following hostnames/IPs are blocked:
+   - `localhost`
+   - `127.0.0.1`
+   - `[::1]`
+   - `0.0.0.0`
+3. **Allowed Import Hosts (Whitelist)**: By default, **all HTTPS module imports are blocked** to prevent unauthorized remote code execution. To allow imports from trusted registries or CDNs, you must configure the whitelisted hosts list under the key `AllowedImportHost` (also accepts `allowedImportHosts`) in your configuration files:
+   - **`kumo.config.json`**:
+     ```json
+     {
+       "AllowedImportHost": ["esm.sh", "cdn.jsdelivr.net"]
+     }
+     ```
+   - **`kumo.config.js`**:
+     ```javascript
+     module.exports = {
+       AllowedImportHost: ["esm.sh", "cdn.jsdelivr.net"]
+     };
+     ```
+   If a script attempts to import from an unlisted host, it will fail execution with a Spanish safety warning explaining that imports from that host are blocked and instructing how to whitelist the host.

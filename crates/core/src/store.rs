@@ -62,17 +62,17 @@ impl Store {
     }
 
     pub fn get_path(&self, hash: &str) -> PathBuf {
-        self.root.join("objects").join(&hash[0..2]).join(&hash[2..])
+        self.root.join(crate::config::OBJECTS_DIR_NAME).join(&hash[0..2]).join(&hash[2..])
     }
 
     pub async fn init(&self) -> Result<()> {
         fs::create_dir_all(&self.root)
             .await
             .context("Failed to create store root")?;
-        fs::create_dir_all(self.root.join("metadata"))
+        fs::create_dir_all(self.root.join(crate::config::METADATA_DIR_NAME))
             .await
             .context("Failed to create store metadata dir")?;
-        fs::create_dir_all(self.root.join("objects"))
+        fs::create_dir_all(self.root.join(crate::config::OBJECTS_DIR_NAME))
             .await
             .context("Failed to create store objects dir")?;
         Ok(())
@@ -107,7 +107,7 @@ impl Store {
     pub async fn prune(&self) -> Result<u64> {
         let mut referenced_hashes = std::collections::HashSet::new();
 
-        let mut metadata_entries = fs::read_dir(self.root.join("metadata")).await?;
+        let mut metadata_entries = fs::read_dir(self.root.join(crate::config::METADATA_DIR_NAME)).await?;
         while let Some(entry) = metadata_entries.next_entry().await? {
             let content = fs::read_to_string(entry.path()).await?;
             let map: HashMap<String, String> = serde_json::from_str(&content)?;
@@ -117,7 +117,7 @@ impl Store {
         }
 
         let mut deleted_count = 0;
-        let objects_root = self.root.join("objects");
+        let objects_root = self.root.join(crate::config::OBJECTS_DIR_NAME);
         let mut dir_entries = fs::read_dir(&objects_root).await?;
         while let Some(dir_entry) = dir_entries.next_entry().await? {
             if dir_entry.file_type().await?.is_dir() {
@@ -151,7 +151,7 @@ impl Store {
     fn get_index_path(&self, key: &str) -> PathBuf {
         let safe_key = key.replace('/', "__").replace('@', "@@");
         self.root
-            .join("metadata")
+            .join(crate::config::METADATA_DIR_NAME)
             .join(format!("{}.json", safe_key))
     }
 }

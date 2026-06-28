@@ -10,8 +10,8 @@ use std::path::PathBuf;
 pub async fn init_components() -> Result<(Store, SecurityEngine, Resolver)> {
     let store_path = dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join(".kumo")
-        .join("store");
+        .join(kumo_core::config::KUMO_DIR_NAME)
+        .join(kumo_core::config::STORE_DIR_NAME);
 
     let store = Store::new(store_path);
     store.init().await?;
@@ -20,8 +20,8 @@ pub async fn init_components() -> Result<(Store, SecurityEngine, Resolver)> {
 
     let global_config_path = dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join(".kumo")
-        .join("kumo.config.json");
+        .join(kumo_core::config::KUMO_DIR_NAME)
+        .join(kumo_core::config::KUMO_CONFIG_JSON);
     if let Ok(content) = std::fs::read_to_string(&global_config_path) {
         if let Ok(global_val) = serde_json::from_str::<serde_json::Value>(&content) {
             if let Some(obj) = global_val.as_object() {
@@ -32,7 +32,7 @@ pub async fn init_components() -> Result<(Store, SecurityEngine, Resolver)> {
         }
     }
 
-    let local_config_path = std::env::current_dir()?.join("kumo.config.json");
+    let local_config_path = std::env::current_dir()?.join(kumo_core::config::KUMO_CONFIG_JSON);
     if let Ok(content) = std::fs::read_to_string(&local_config_path) {
         if let Ok(local_val) = serde_json::from_str::<serde_json::Value>(&content) {
             if let Some(obj) = local_val.as_object() {
@@ -60,7 +60,7 @@ pub fn get_deps_dir() -> String {
     let mut use_node_modules = false;
     let mut local_set = false;
 
-    if let Ok(content) = std::fs::read_to_string("kumo.config.json") {
+    if let Ok(content) = std::fs::read_to_string(kumo_core::config::KUMO_CONFIG_JSON) {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
             if let Some(b) = v["useNodeModules"].as_bool() {
                 use_node_modules = b;
@@ -71,7 +71,7 @@ pub fn get_deps_dir() -> String {
 
     if !local_set {
         if let Some(home) = dirs::home_dir() {
-            let global_path = home.join(".kumo").join("kumo.config.json");
+            let global_path = home.join(kumo_core::config::KUMO_DIR_NAME).join(kumo_core::config::KUMO_CONFIG_JSON);
             if let Ok(content) = std::fs::read_to_string(global_path) {
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
                     use_node_modules = v["useNodeModules"].as_bool().unwrap_or(false);
@@ -90,7 +90,7 @@ pub fn get_deps_dir() -> String {
 pub async fn check_for_new_version() -> Option<String> {
     let current_version = env!("CARGO_PKG_VERSION");
     let home = dirs::home_dir()?;
-    let check_file = home.join(".kumo").join("last_check.json");
+    let check_file = home.join(kumo_core::config::KUMO_DIR_NAME).join(kumo_core::config::UPDATE_LAST_CHECK_FILE);
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -109,15 +109,15 @@ pub async fn check_for_new_version() -> Option<String> {
         }
     }
 
-    if now - last_check > 86400 || cached_latest.is_empty() {
+    if now - last_check > kumo_core::config::UPDATE_CHECK_INTERVAL_SECS || cached_latest.is_empty() {
         let client = reqwest::Client::builder()
-            .user_agent("kumo/pm")
-            .timeout(std::time::Duration::from_secs(2))
+            .user_agent(kumo_core::config::DEFAULT_USER_AGENT)
+            .timeout(std::time::Duration::from_secs(kumo_core::config::UPDATE_CHECK_TIMEOUT_SECS))
             .build()
             .ok()?;
 
         let response = client
-            .get("https://api.github.com/repos/jmaxdev/kumo/releases/latest")
+            .get(kumo_core::config::GITHUB_RELEASES_LATEST_URL)
             .send()
             .await
             .ok()?;
@@ -212,7 +212,7 @@ pub async fn create_shim(
 #[allow(dead_code)]
 pub fn ensure_kumo_polyfills() -> Result<String> {
     let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    let kumo_dir = home.join(".kumo");
+    let kumo_dir = home.join(kumo_core::config::KUMO_DIR_NAME);
     let lib_dir = kumo_dir.join("lib");
     if !lib_dir.exists() {
         std::fs::create_dir_all(&lib_dir)?;

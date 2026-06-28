@@ -16,7 +16,7 @@ pub struct Credentials {
 
 fn get_credentials_path() -> Result<PathBuf> {
     let home = dirs::home_dir().context("Could not determine home directory")?;
-    Ok(home.join(".kumo").join("credentials.json"))
+    Ok(home.join(crate::config::KUMO_DIR_NAME).join(crate::config::CREDENTIALS_FILE))
 }
 
 pub fn load_credentials() -> Result<Credentials> {

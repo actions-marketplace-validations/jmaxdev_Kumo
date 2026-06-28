@@ -50,31 +50,25 @@ pub struct Policy {
 impl Default for Policy {
     fn default() -> Self {
         Self {
-            block_deprecated: true,
-            min_severity: "high".to_string(),
+            block_deprecated: kumo_core::config::DEFAULT_POLICY_BLOCK_DEPRECATED,
+            min_severity: kumo_core::config::DEFAULT_POLICY_MIN_SEVERITY.to_string(),
             blocked_packages: HashSet::new(),
-            allowed_licenses: vec!["MIT", "Apache-2.0", "ISC", "BSD-3-Clause"]
-                .into_iter()
-                .map(String::from)
+            allowed_licenses: kumo_core::config::DEFAULT_ALLOWED_LICENSES
+                .iter()
+                .map(|&s| s.to_string())
                 .collect(),
-            minimum_release_age: 1440,
-            allow_postinstall: false,
+            minimum_release_age: kumo_core::config::DEFAULT_POLICY_MINIMUM_RELEASE_AGE_MINS,
+            allow_postinstall: kumo_core::config::DEFAULT_POLICY_ALLOW_POSTINSTALL,
             trusted_packages: HashSet::new(),
-            trust_policy: "none".to_string(),
+            trust_policy: kumo_core::config::DEFAULT_POLICY_TRUST_POLICY.to_string(),
             trust_policy_exclude: HashSet::new(),
-            trust_policy_ignore_after: 10080,
+            trust_policy_ignore_after: kumo_core::config::DEFAULT_POLICY_TRUST_POLICY_IGNORE_AFTER_MINS,
             protected_packages: HashSet::new(),
-            allowed_domains: vec![
-                "github.com",
-                "objects.githubusercontent.com",
-                "registry.npmjs.org",
-                "nodejs.org",
-                "localhost",
-            ]
-            .into_iter()
-            .map(String::from)
-            .collect(),
-            registry: "npm".to_string(),
+            allowed_domains: kumo_core::config::DEFAULT_ALLOWED_DOMAINS
+                .iter()
+                .map(|&s| s.to_string())
+                .collect(),
+            registry: kumo_core::config::DEFAULT_REGISTRY.to_string(),
         }
     }
 }
@@ -88,7 +82,7 @@ pub struct SecurityEngine {
 impl SecurityEngine {
     pub fn new(policy: Policy) -> Self {
         let client = reqwest::Client::builder()
-            .user_agent("kumo/pm")
+            .user_agent(kumo_core::config::DEFAULT_USER_AGENT)
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
         let popular_packages = Self::load_popular_packages_sync();
@@ -100,7 +94,7 @@ impl SecurityEngine {
     }
 
     fn get_popular_packages_path() -> Option<std::path::PathBuf> {
-        dirs::home_dir().map(|h| h.join(".kumo").join("top_packages.json"))
+        dirs::home_dir().map(|h| h.join(kumo_core::config::KUMO_DIR_NAME).join(kumo_core::config::POPULAR_PACKAGES_CACHE_FILE))
     }
 
     fn load_popular_packages_sync() -> HashSet<String> {
@@ -121,7 +115,7 @@ impl SecurityEngine {
             if let Ok(meta) = std::fs::metadata(&path) {
                 if let Ok(modified) = meta.modified() {
                     if let Ok(elapsed) = modified.elapsed() {
-                        return elapsed.as_secs() > 7 * 24 * 60 * 60;
+                        return elapsed.as_secs() > kumo_core::config::POPULAR_PACKAGES_REFRESH_SECS;
                     }
                 }
             }
@@ -137,13 +131,13 @@ impl SecurityEngine {
 
         let mut all_names: Vec<String> = Vec::new();
 
-        let url = "https://data.jsdelivr.com/v1/stats/packages";
+        let url = kumo_core::config::POPULAR_PACKAGES_API_URL;
         if let Ok(resp) = self.client.get(url).send().await {
             if let Ok(data) = resp.json::<serde_json::Value>().await {
                 if let Some(arr) = data.as_array() {
                     for obj in arr {
                         if let Some(name) = obj.get("name").and_then(|n| n.as_str()) {
-                            if all_names.len() < 1000 {
+                            if all_names.len() < kumo_core::config::POPULAR_PACKAGES_LIMIT {
                                 all_names.push(name.to_string());
                             }
                         }
@@ -217,7 +211,7 @@ impl SecurityEngine {
         name: &str,
         version: &str,
     ) -> Result<Vec<Vulnerability>> {
-        let url = "https://api.osv.dev/v1/query";
+        let url = kumo_core::config::OSV_API_QUERY_URL;
         let body = serde_json::json!({
             "version": version,
             "package": {

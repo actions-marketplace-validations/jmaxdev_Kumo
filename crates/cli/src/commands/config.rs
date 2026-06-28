@@ -26,18 +26,18 @@ impl super::Command for ConfigCommand {
 pub async fn execute(subcommand: ConfigSubcommand) -> Result<()> {
     match subcommand {
         ConfigSubcommand::Init => {
-            let config_path = std::env::current_dir()?.join("kumo.config.json");
+            let config_path = std::env::current_dir()?.join(kumo_core::config::KUMO_CONFIG_JSON);
             if config_path.exists() {
-                anyhow::bail!("kumo.config.json already exists");
+                anyhow::bail!("{} already exists", kumo_core::config::KUMO_CONFIG_JSON);
             }
 
             let policy = security::Policy::default();
             let json = serde_json::to_string_pretty(&policy)?;
-            std::fs::write(config_path, json)?;
-            println!("Created kumo.config.json with default security policies.");
+            std::fs::write(&config_path, json)?;
+            println!("Created {} with default security policies.", kumo_core::config::KUMO_CONFIG_JSON);
         }
         ConfigSubcommand::Default { setting, value } => {
-            let global_config = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?.join(".kumo").join("kumo.config.json");
+            let global_config = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?.join(kumo_core::config::KUMO_DIR_NAME).join(kumo_core::config::KUMO_CONFIG_JSON);
             let mut config_json = if global_config.exists() {
                 serde_json::from_str(&std::fs::read_to_string(&global_config)?).unwrap_or_else(|_| serde_json::to_value(security::Policy::default()).unwrap())
             } else {

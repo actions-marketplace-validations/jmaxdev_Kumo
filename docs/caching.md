@@ -27,6 +27,41 @@ Kumo applies smart, predefined glob matching for generic, Next.js, and Vite proj
 > [!NOTE]
 > Long-running interactive processes (e.g., development servers like `next dev` or `vite dev`) are automatically detected and **never cached** to ensure interactive development flows work perfectly.
 
+#### Customizing Cache Configuration
+
+If the default input patterns do not cover your project structure, or if you want to enable caching for a custom script, you can specify input and output rules inside the `cache` object in your local `kumo.config.json` file. The keys inside the `cache` object correspond to script names in your `package.json` or `kumo.json`.
+
+Each script configuration accepts:
+* `inputs`: An array of glob patterns matching files that should trigger a re-run if modified.
+* `outputs`: An array of file paths or directories that Kumo should backup and restore upon a cache hit.
+
+Example configuration in `kumo.config.json`:
+```json
+{
+  "cache": {
+    "build": {
+      "inputs": [
+        "src/**/*.ts",
+        "src/**/*.json",
+        "tsconfig.json"
+      ],
+      "outputs": [
+        "dist"
+      ]
+    },
+    "compile-assets": {
+      "inputs": [
+        "assets/**/*",
+        "tailwind.config.js"
+      ],
+      "outputs": [
+        "public/build"
+      ]
+    }
+  }
+}
+```
+
 ### Cache Storage and Hit Restoring
 
 Script execution logs and outputs are stored in `~/.kumo/cache/scripts/<blake3_hash>`. 

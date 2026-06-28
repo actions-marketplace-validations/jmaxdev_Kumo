@@ -24,7 +24,7 @@ pub async fn execute(file: Option<String>) -> Result<()> {
 
     let files_to_lock = match file {
         Some(f) => vec![f],
-        None => vec!["kumo.config.json".to_string(), "kumo.lock".to_string()],
+        None => vec![kumo_core::config::KUMO_CONFIG_JSON.to_string(), kumo_core::config::KUMO_LOCK.to_string()],
     };
 
     let cwd = std::env::current_dir()?;
@@ -34,11 +34,11 @@ pub async fn execute(file: Option<String>) -> Result<()> {
         if path.exists() {
             shield.shield_file(&path)?;
             println!("🛡️  Locked {}", f);
-        } else if f == "kumo.config.json" {
-            let global_path = dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".kumo").join("kumo.config.json");
+        } else if f == kumo_core::config::KUMO_CONFIG_JSON {
+            let global_path = dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(kumo_core::config::KUMO_DIR_NAME).join(kumo_core::config::KUMO_CONFIG_JSON);
             if global_path.exists() {
                 shield.shield_file(&global_path)?;
-                println!("🛡️  Locked global kumo.config.json");
+                println!("🛡️  Locked global {}", kumo_core::config::KUMO_CONFIG_JSON);
             }
         }
     }

@@ -14,9 +14,9 @@ impl super::Command for ExplainCommand {
 }
 
 pub async fn execute(name: &str) -> Result<()> {
-    let lock_path = std::env::current_dir()?.join("kumo.lock");
+    let lock_path = std::env::current_dir()?.join(kumo_core::config::KUMO_LOCK);
     if !lock_path.exists() {
-        anyhow::bail!("kumo.lock not found.");
+        anyhow::bail!("{} not found.", kumo_core::config::KUMO_LOCK);
     }
 
     let lockfile: Lockfile = serde_yml::from_str(&std::fs::read_to_string(lock_path)?)?;

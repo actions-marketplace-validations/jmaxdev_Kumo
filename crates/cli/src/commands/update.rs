@@ -26,13 +26,13 @@ pub async fn execute(include_pre: bool, target_version: Option<String>) -> Resul
     }
 
     let client = reqwest::Client::builder()
-        .user_agent("kumo/pm")
+        .user_agent(kumo_core::config::DEFAULT_USER_AGENT)
         .build()?;
 
     let url = if include_pre || target_version.is_some() {
-        "https://api.github.com/repos/jmaxdev/kumo/releases"
+        kumo_core::config::GITHUB_RELEASES_LIST_URL
     } else {
-        "https://api.github.com/repos/jmaxdev/kumo/releases/latest"
+        kumo_core::config::GITHUB_RELEASES_LATEST_URL
     };
 
     let response = client.get(url).send().await?;

@@ -43,15 +43,15 @@ pub async fn execute_publish(
         r.trim_end_matches('/').to_string()
     } else {
         let resolved = ctx.resolver.registry_url().to_string();
-        if resolved == "https://registry.npmjs.org" {
-            "https://kumo.unsetsoft.com".to_string()
+        if resolved == kumo_core::config::DEFAULT_REGISTRY_NPM_URL {
+            kumo_core::config::DEFAULT_REGISTRY_KUMO_URL.to_string()
         } else {
             resolved
         }
     };
 
-    if registry_url != "https://kumo.unsetsoft.com" {
-        anyhow::bail!("Publishing is only supported for the Kumo registry (https://kumo.unsetsoft.com).");
+    if registry_url != kumo_core::config::DEFAULT_REGISTRY_KUMO_URL {
+        anyhow::bail!("Publishing is only supported for the Kumo registry ({}).", kumo_core::config::DEFAULT_REGISTRY_KUMO_URL);
     }
 
     let token = credentials::get_token(&registry_url)

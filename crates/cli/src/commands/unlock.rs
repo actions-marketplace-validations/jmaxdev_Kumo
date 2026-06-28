@@ -23,17 +23,17 @@ pub async fn execute(file: String) -> Result<()> {
         return Ok(());
     }
 
-    let allowed_files = ["kumo.config.json", "kumo.lock"];
+    let allowed_files = [kumo_core::config::KUMO_CONFIG_JSON, kumo_core::config::KUMO_LOCK];
     let filename = Path::new(&file).file_name().unwrap_or_default().to_string_lossy();
     
     if !allowed_files.contains(&filename.as_ref()) {
-        anyhow::bail!("Security violation: Only kumo.config.json and kumo.lock can be unlocked.");
+        anyhow::bail!("Security violation: Only {} and {} can be unlocked.", kumo_core::config::KUMO_CONFIG_JSON, kumo_core::config::KUMO_LOCK);
     }
 
     let file_path = std::env::current_dir()?.join(&file);
     if !file_path.exists() {
-        if file == "kumo.config.json" {
-            let global_path = dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".kumo").join("kumo.config.json");
+        if file == kumo_core::config::KUMO_CONFIG_JSON {
+            let global_path = dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(kumo_core::config::KUMO_DIR_NAME).join(kumo_core::config::KUMO_CONFIG_JSON);
             if global_path.exists() {
                 return unlock_file(&global_path, &shield).await;
             }

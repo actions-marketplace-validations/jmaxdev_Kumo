@@ -147,7 +147,7 @@ pub async fn execute(
         }
     }
 
-    let lock_path = std::env::current_dir()?.join("kumo.lock");
+    let lock_path = std::env::current_dir()?.join(kumo_core::config::KUMO_LOCK);
     let locked_versions: HashMap<String, String> = if lock_path.exists() {
         let lockfile: resolver::Lockfile =
             serde_yml::from_str(&std::fs::read_to_string(&lock_path)?)?;

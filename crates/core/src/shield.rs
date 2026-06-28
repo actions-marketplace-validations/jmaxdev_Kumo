@@ -10,7 +10,7 @@ pub struct ShieldManager {
 impl ShieldManager {
     pub fn new() -> Self {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        let state_path = home.join(".kumo").join(".shield_state");
+        let state_path = home.join(crate::config::KUMO_DIR_NAME).join(crate::config::SHIELD_STATE_FILE);
         Self { state_path }
     }
 

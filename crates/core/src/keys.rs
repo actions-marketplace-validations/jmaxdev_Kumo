@@ -8,10 +8,10 @@ use std::path::PathBuf;
 
 fn get_key_paths() -> Result<(PathBuf, PathBuf)> {
     let home = dirs::home_dir().context("Could not determine home directory")?;
-    let base_dir = home.join(".kumo");
+    let base_dir = home.join(crate::config::KUMO_DIR_NAME);
     Ok((
-        base_dir.join("private_key.pem"),
-        base_dir.join("public_key.pem"),
+        base_dir.join(crate::config::PRIVATE_KEY_FILE),
+        base_dir.join(crate::config::PUBLIC_KEY_FILE),
     ))
 }
 

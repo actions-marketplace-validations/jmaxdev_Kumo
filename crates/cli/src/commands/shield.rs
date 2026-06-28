@@ -51,7 +51,7 @@ pub async fn execute(action: ShieldAction) -> Result<()> {
             }
 
             if let Ok(cwd) = std::env::current_dir() {
-                for file in ["kumo.lock", "kumo.json", "kumo.config.json"] {
+                for file in [kumo_core::config::KUMO_LOCK, kumo_core::config::KUMO_JSON, kumo_core::config::KUMO_CONFIG_JSON] {
                     let path = cwd.join(file);
                     if path.exists() {
                         let _ = shield.shield_file(&path);
@@ -60,7 +60,7 @@ pub async fn execute(action: ShieldAction) -> Result<()> {
             }
 
             println!("Existing and new packages in the cache are now marked as Read-Only.");
-            println!("To edit kumo.config.json or kumo.lock, use 'kumo unlock <file>'.");
+            println!("To edit {} or {}, use 'kumo unlock <file>'.", kumo_core::config::KUMO_CONFIG_JSON, kumo_core::config::KUMO_LOCK);
         }
         ShieldAction::Off => {
             shield.set_active(false)?;

@@ -16,23 +16,23 @@ impl Resolver {
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
             .use_rustls_tls()
-            .pool_max_idle_per_host(20)
-            .pool_idle_timeout(std::time::Duration::from_secs(90))
+            .pool_max_idle_per_host(kumo_core::config::RESOLVER_POOL_MAX_IDLE)
+            .pool_idle_timeout(std::time::Duration::from_secs(kumo_core::config::RESOLVER_IDLE_TIMEOUT_SECS))
             .tcp_nodelay(true)
-            .user_agent(format!("kumo/pm"))
+            .user_agent(kumo_core::config::DEFAULT_USER_AGENT)
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
-        let mut registry_raw = "kumo".to_string();
+        let mut registry_raw = kumo_core::config::DEFAULT_REGISTRY_KUMO_URL.to_string();
 
-        if let Ok(env_reg) = std::env::var("KUMO_REGISTRY") {
+        if let Ok(env_reg) = std::env::var(kumo_core::config::ENV_VAR_KUMO_REGISTRY) {
             if !env_reg.trim().is_empty() {
                 registry_raw = env_reg.trim().to_string();
             }
         } else {
             let mut found = false;
             if let Ok(curr_dir) = std::env::current_dir() {
-                let local_path = curr_dir.join("kumo.config.json");
+                let local_path = curr_dir.join(kumo_core::config::KUMO_CONFIG_JSON);
                 if let Ok(content) = std::fs::read_to_string(&local_path) {
                     if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
                         if let Some(r) = val.get("registry").and_then(|v| v.as_str()) {
@@ -44,7 +44,7 @@ impl Resolver {
             }
             if !found {
                 if let Some(home) = dirs::home_dir() {
-                    let global_path = home.join(".kumo").join("kumo.config.json");
+                    let global_path = home.join(kumo_core::config::KUMO_DIR_NAME).join(kumo_core::config::KUMO_CONFIG_JSON);
                     if let Ok(content) = std::fs::read_to_string(&global_path) {
                         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
                             if let Some(r) = val.get("registry").and_then(|v| v.as_str()) {
@@ -57,12 +57,12 @@ impl Resolver {
         }
 
         let registry_url = match registry_raw.as_str() {
-            "npm" => "https://registry.npmjs.org".to_string(),
-            "kumo" => "https://kumo.unsetsoft.com".to_string(),
+            "npm" => kumo_core::config::DEFAULT_REGISTRY_NPM_URL.to_string(),
+            "kumo" => kumo_core::config::DEFAULT_REGISTRY_KUMO_URL.to_string(),
             other if other.starts_with("http://") || other.starts_with("https://") => {
                 other.trim_end_matches('/').to_string()
             }
-            _ => "https://kumo.unsetsoft.com".to_string(),
+            _ => kumo_core::config::DEFAULT_REGISTRY_KUMO_URL.to_string(),
         };
 
         Self {

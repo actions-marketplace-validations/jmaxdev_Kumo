@@ -31,6 +31,17 @@ Kumo automatically detects where to link your dependencies:
 
 ## Commands
 
+### `init`
+Initializes a new `package.json` file in the current directory. It interactively prompts you for project metadata such as package name, version, description, entry point, author, and license.
+
+- `-y, --yes`: Initializes the project with default values immediately, skipping all interactive prompts.
+
+```bash
+kumo init
+kumo init --yes
+kumo init -y
+```
+
 ### `install` (alias: `i`)
 Installs dependencies from `kumo.json` or `package.json`. It resolves the full dependency tree, generates a `kumo.lock` file, and links packages into the project's dependency directory (detected automatically as `node_modules` or `dependencies`).
 
@@ -172,6 +183,7 @@ Updates project dependencies to their latest available versions. By default, it 
 
 - `[packages...]`: Specific packages to upgrade. If omitted, all dependencies are checked.
 - `-L, --latest`: Upgrade to the absolute latest version, ignoring semver ranges.
+- `-F, --fixed`: Save the exact version resolved in the configuration file rather than prefixing it with a semver range (like `^`).
 - `--prod`: Only upgrade `dependencies` (skip `devDependencies`).
 - `--dev`: Only upgrade `devDependencies` (skip `dependencies`).
 - `-n, --dry-run`: Show available updates without applying them.
@@ -181,8 +193,8 @@ Updates project dependencies to their latest available versions. By default, it 
 # Upgrade all dependencies within semver ranges
 kumo upgrade
 
-# Upgrade specific packages
-kumo upgrade express typescript
+# Upgrade specific packages and write exact version numbers to package.json
+kumo upgrade express typescript --fixed
 
 # Upgrade to absolute latest versions (ignore semver ranges)
 kumo upgrade --latest
@@ -198,7 +210,7 @@ kumo upgrade --dry-run
 Provides a built-in TypeScript execution environment without requiring local dependencies. It automatically downloads the necessary compilers via Kumo Execute (`kx`) in the background.
 
 #### `ts init`
-Initializes a new TypeScript project by generating a default `tsconfig.json` file (runs `tsc --init`).
+Initializes a new TypeScript project by generating a default `tsconfig.json` file (runs `tsc --init`). It also creates a `.kumo/kumo.d.ts` declaration file in the project, automatically including it in the `tsconfig.json` `include` array. This registers types for the built-in global `Kumo` JavaScript API available when executing files via `kumo ts exec`.
 
 ```bash
 kumo ts init
@@ -227,6 +239,52 @@ kumo ts exec src/index.ts
 ```
 _For execution options, see the [tsx documentation](https://tsx.hirok.io/getting-started)._
 
+#### Global Kumo API
+
+When executing a TypeScript/JavaScript file using `kumo ts exec`, Kumo registers a global `Kumo` helper object containing utility methods for filesystem operations, child process execution, HTTP serving, and more:
+
+- **`Kumo.version`**: The version string of the Kumo CLI.
+- **`Kumo.env`**: Reference to `process.env`.
+- **`Kumo.file(path)`**: Access file utilities for the given path:
+  - `text()`: Promise returning file content as string.
+  - `json<T>()`: Promise returning parsed JSON.
+  - `exists()`: Synchronous check for file existence.
+- **`Kumo.write(path, data)`**: Writes text or Uint8Array binary data to the file path.
+- **`Kumo.spawn(command, args?, options?)`**: Helper to spawn child processes, returning a process wrapper.
+- **`Kumo.sleep(ms)`**: Helper promise that resolves after the specified milliseconds.
+- **`Kumo.serve(options)`**: Spawns a lightweight HTTP server (default port: `3000`) with a custom `fetch(request: Request): Promise<Response> | Response` request handler.
+- **`Kumo.pkg.readConfig()`**: Parses and returns the project's local `kumo.json` or `package.json` file.
+
+Example usage:
+```typescript
+// Run with: kumo ts exec script.ts
+console.log(`Running on Kumo v${Kumo.version}`);
+
+if (Kumo.file("config.json").exists()) {
+  const cfg = await Kumo.file("config.json").json();
+  console.log("Config loaded:", cfg);
+}
+
+// Start a lightweight HTTP server
+Kumo.serve({
+  port: 8080,
+  fetch: (req) => {
+    return new Response(`Hello from Kumo server! Path: ${req.url}`);
+  }
+});
+```
+
+#### HTTPS Module Loader
+
+Scripts run via `kumo ts exec` also benefit from a built-in HTTPS ESM loader. You can directly import packages from URLs (such as `esm.sh` or other CDNs) without installing them:
+
+```typescript
+import confetti from "https://esm.sh/canvas-confetti";
+confetti();
+```
+
+*For security constraints (e.g. blocking HTTP or local connections), see the [Security documentation](security.md#8-secure-https-module-loader).*
+
 ### `config`
 Manage Kumo configuration and security policies.
 
@@ -248,12 +306,15 @@ kumo config default useNodeModules true
 kumo config default block_deprecated false
 ```
 
-### `update [--pre]`
-Checks for and installs the latest version of the **Kumo CLI binary** from GitHub. This does not affect project dependencies — use `kumo upgrade` for that.
-- `--pre`: Includes pre-releases (alpha, beta, rc) in the update search.
+### `update [version] [--pre]`
+Checks for and installs the latest version (or a specified version) of the **Kumo CLI binary** from GitHub. This does not affect project dependencies — use `kumo upgrade` for that.
+
+- `[version]`: A specific version to upgrade/downgrade to (e.g. `1.0.6`).
+- `--pre`: Includes pre-releases (alpha, beta, rc) in the update search (ignored if a specific version is provided).
 
 ```bash
 kumo update
+kumo update 1.0.6
 kumo update --pre
 ```
 
