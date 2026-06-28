@@ -372,4 +372,27 @@ mod tests {
             .collect();
         assert_eq!(keys, vec!["name", "version", "dependencies", "author"]);
     }
+
+    #[test]
+    fn test_policy_allowed_import_hosts_deserialization() {
+        let json_data = r#"{
+            "AllowedImportHost": ["esm.sh", "cdn.jsdelivr.net"]
+        }"#;
+        let policy: Policy = serde_json::from_str(json_data).unwrap();
+        assert!(policy.allowed_import_hosts.contains("esm.sh"));
+        assert!(policy.allowed_import_hosts.contains("cdn.jsdelivr.net"));
+        assert_eq!(policy.allowed_import_hosts.len(), 2);
+
+        // Test with alias allowedImportHosts
+        let json_data_alias1 = r#"{
+            "allowedImportHosts": ["unpkg.com"]
+        }"#;
+        let policy_alias1: Policy = serde_json::from_str(json_data_alias1).unwrap();
+        assert!(policy_alias1.allowed_import_hosts.contains("unpkg.com"));
+
+        // Test serialization
+        let policy_default = Policy::default();
+        let serialized = serde_json::to_string(&policy_default).unwrap();
+        assert!(serialized.contains("\"AllowedImportHost\":"));
+    }
 }

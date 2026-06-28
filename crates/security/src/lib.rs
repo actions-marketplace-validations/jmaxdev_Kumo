@@ -31,6 +31,7 @@ impl std::fmt::Display for TrustLevel {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Policy {
     pub block_deprecated: bool,
     pub min_severity: String,
@@ -44,6 +45,8 @@ pub struct Policy {
     pub trust_policy_ignore_after: u64,
     pub protected_packages: HashSet<String>,
     pub allowed_domains: HashSet<String>,
+    #[serde(rename = "AllowedImportHost", alias = "allowedImportHosts", alias = "AllowedImportHosts", alias = "allowed_import_hosts")]
+    pub allowed_import_hosts: HashSet<String>,
     pub registry: String,
 }
 
@@ -65,6 +68,10 @@ impl Default for Policy {
             trust_policy_ignore_after: kumo_core::config::DEFAULT_POLICY_TRUST_POLICY_IGNORE_AFTER_MINS,
             protected_packages: HashSet::new(),
             allowed_domains: kumo_core::config::DEFAULT_ALLOWED_DOMAINS
+                .iter()
+                .map(|&s| s.to_string())
+                .collect(),
+            allowed_import_hosts: kumo_core::config::DEFAULT_ALLOWED_IMPORT_HOSTS
                 .iter()
                 .map(|&s| s.to_string())
                 .collect(),

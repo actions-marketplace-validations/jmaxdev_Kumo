@@ -54,6 +54,9 @@ pub const DEFAULT_ALLOWED_DOMAINS: &[&str] = &[
     "localhost",
 ];
 
+// Default allowed import hosts
+pub const DEFAULT_ALLOWED_IMPORT_HOSTS: &[&str] = &[];
+
 // Sandbox constants
 pub const SANDBOX_DIR_NAME: &str = ".kumo_sandbox_home";
 pub const SANDBOX_WINDOWS_PROXY_PORT: u16 = 9999;
