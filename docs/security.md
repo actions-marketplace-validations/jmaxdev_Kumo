@@ -22,7 +22,7 @@ kumo config init
 | `minimum_release_age` | Number | The minimum age of a package version (in minutes) required for installation. Helps mitigate typosquatting. | `1440` (24 hours) |
 | `allow_postinstall` | Boolean | If `false`, Kumo will block packages that have lifecycle scripts (`preinstall`, `install`, `postinstall`). | `false` |
 | `trusted_packages` | Array | A list of packages that are allowed to run scripts even if `allow_postinstall` is `false`. | `[]` |
-| `trust_policy` | String | Enforces signature and provenance checks. Set to `"no-downgrade"` to prevent package updates that have a weaker trust level than previously installed releases. Options: `"none"`, `"no-downgrade"`. | `"none"` |
+| `trust_policy` | String | Enforces signature and provenance checks. Set to `"no-downgrade"` to prevent package updates that have a weaker trust level than previously installed releases. Options: `"none"`, `"no-downgrade"`, `"strict"`. | `"none"` |
 | `trust_policy_exclude` | Array | A list of package names that are excluded from the trust policy check. | `[]` |
 | `trust_policy_ignore_after` | Number | The number of minutes after publication to ignore trust verification (allows older releases without provenance). | `10080` (7 days) |
 | `protected_packages` | Array | A custom list of highly sensitive packages to protect from typosquatting (e.g., `["react", "next"]`). If empty, only existing project dependencies are protected. | `[]` |
@@ -31,6 +31,15 @@ kumo config init
 | `useNodeModules` | Boolean | If `true`, Kumo will link dependencies into a `node_modules` directory natively for maximum compatibility with standard tools, rather than the default `dependencies` directory. | `false` |
 | `cache` | Object | Configures custom inputs and outputs for script caching (`kumo run`). See [caching documentation](caching.md) for schema details. | `{}` |
 | `AllowedImportHost` | Array | A whitelist of allowed hostnames for HTTPS module imports in scripts (e.g. `["esm.sh"]`). If empty or omitted, all URL imports are blocked by default. | `[]` |
+
+### Registry Override (`KUMO_REGISTRY`)
+
+You can override the configured package registry URL globally at runtime by setting the `KUMO_REGISTRY` environment variable. When defined, Kumo bypasses any registry URL configured in local or global `kumo.config.json` files and uses this value instead.
+
+```bash
+# Override the registry to a local proxy or mirror
+export KUMO_REGISTRY="http://localhost:4873"
+```
 
 ## Mitigating Supply Chain Attacks
 
@@ -58,7 +67,14 @@ To guarantee absolute protection, when scripts are allowed, Kumo executes them i
 ### 2. Typosquatting Protection (Levenshtein Engine)
 Attackers often release packages with names very similar to popular ones (e.g. `axois-utils` or `chalk-tempalte`). Kumo provides two layers of defense against this:
 1. **Age Threshold (`minimum_release_age`):** Enforces a default 24-hour minimum age for package releases, ensuring freshly published malicious copycats are blocked.
-2. **Levenshtein Distance Check:** Compares newly resolved package names against the project's **existing dependencies** and any names you define in your `protected_packages` config array. If a new package has a Levenshtein distance ≤ 2 (or ≤ 3 for longer names) to any of these trusted names, Kumo automatically flags it and halts the installation with a typosquatting warning.
+2. **Levenshtein Distance Check:** Compares newly resolved package names against the project's **existing dependencies**, popular packages, and any names you define in your `protected_packages` config array.
+   To avoid false positives, the typosquatting engine will **skip checks** if:
+   * The package name is very short (length ≤ 3).
+   * The difference in name length between the packages is > 2.
+   * One package name starts with the other as a prefix, followed by a separator (`-`, `_`, or `.`). For example, `express-session` is not flagged against a trusted `express`.
+   Otherwise, Kumo flags typosquatting and aborts the installation if:
+   * For package names ≤ 10 characters: Levenshtein distance is exactly 1 (e.g. `axois` vs `axios`).
+   * For package names > 10 characters: Levenshtein distance is ≤ 2.
 
 ### 3. Vulnerability Scanning
 Kumo integrates with the **OSV (Open Source Vulnerabilities)** database. During the resolution phase, it checks every package version. If a vulnerability matches the `min_severity` threshold, the installation is aborted.
@@ -77,8 +93,9 @@ To mitigate this, Kumo tracks three **Trust Levels** based on npm registry signa
 2. **Medium**: Standard **Registry Signatures** (PGP or Sigstore signatures).
 3. **Low**: **No trust evidence** (manual publish).
 
-You can configure two modes of `trust_policy` in `kumo.config.json`:
-* `"no-downgrade"` (default): Compares resolved packages against previously installed versions in `kumo.lock`. If a new version's trust level is **weaker** than the previous version, Kumo halts the installation.
+You can configure three modes of `trust_policy` in `kumo.config.json` (defaults to `"none"`):
+* `"none"`: No trust verification check is performed.
+* `"no-downgrade"`: Compares resolved packages against previously installed versions in `kumo.lock`. If a new version's trust level is **weaker** than the previous version, Kumo halts the installation.
 * `"strict"`: Completely blocks installation of **any** package with `Low` trust level (unsigned/no provenance), forcing the user to explicitly whitelist trusted unsigned dependencies in `trust_policy_exclude`.
 
 ```bash
@@ -112,7 +129,16 @@ kumo unlock kumo.config.json
 
 Once you have finished editing, simply run `kumo lock` or execute any Kumo installation command to automatically re-seal the files.
 
-### 8. Secure HTTPS Module Loader
+### 8. Lockfile Validation & Registry Poisoning Protection
+
+To prevent lockfile hijacking or registry poisoning attacks, where an attacker alters `kumo.lock` to point dependency downloads to malicious servers, Kumo executes strict verification of the resolved URLs in the lockfile:
+
+1. **Secure Schemes Only**: Tarball URLs must use secure protocols: `https://`, `git+https://`, or `git+ssh://`. Insecure or raw `http://` protocols are blocked.
+2. **Domain Whitelisting**: The hostname of each download URL is matched against the whitelisted domains configured in `allowed_domains`. If the domain is not whitelisted, the installation aborts.
+3. **URL Name Association**: The URL must contain the plaintext or URL-encoded version of the package name (e.g., the URL for `express` must contain `/express/` or `express-`). This prevents downloading a malicious package from a whitelisted registry using a hijacked package name entry in the lockfile.
+4. **Integrity Hash Enforcement**: Every package entry in the lockfile must possess a valid, non-empty `shasum` integrity signature of at least 40 hexadecimal characters.
+
+### 9. Secure HTTPS Module Loader
 
 When running TypeScript/JavaScript scripts using the `kumo ts exec` execution environment, Kumo registers a secure custom ESM import loader. This loader allows you to directly import remote modules via HTTPS (e.g. `import confetti from "https://esm.sh/canvas-confetti"`) while enforcing strict security rules to prevent common supply chain and network-based exploits:
 
@@ -135,4 +161,4 @@ When running TypeScript/JavaScript scripts using the `kumo ts exec` execution en
        AllowedImportHost: ["esm.sh", "cdn.jsdelivr.net"]
      };
      ```
-   If a script attempts to import from an unlisted host, it will fail execution with a Spanish safety warning explaining that imports from that host are blocked and instructing how to whitelist the host.
+   If a script attempts to import from an unlisted host, it will fail execution with a security restriction warning in English explaining that imports from that host are blocked and instructing how to whitelist the host.

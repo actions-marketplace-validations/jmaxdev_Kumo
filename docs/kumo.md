@@ -83,7 +83,7 @@ kumo scan
 ```
 
 ### `stats` (alias: `st`)
-Shows statistics about the Kumo store, including the number of unique packages, unique files, and disk usage.
+Shows statistics about the Kumo global store, including the store location, the total number of cached objects (unique files), and disk usage.
 
 ```bash
 kumo stats
@@ -122,7 +122,7 @@ kumo doctor
 ```
 
 ### `explain <name>` (alias: `ex`)
-Explains why a package is present in the dependency tree by showing which other packages depend on it.
+Explains whether a package is registered as a direct dependency or a transitive dependency in the lockfile, and lists its own dependencies.
 
 ```bash
 kumo explain <package-name>
@@ -150,7 +150,10 @@ kumo workspaces
 ```
 
 ### `patch <name>`
-Extracts a package to `.kumo/patch/<name>` for manual patching. After editing, you can apply the changes.
+Extracts a package to `.kumo/patch/<name>` for manual patching.
+
+> [!NOTE]
+> Kumo does not currently implement automatic application or tracking of these patches. The command is strictly for extracting package contents into a separate workspace directory to facilitate manual modifications.
 
 ```bash
 kumo patch <package-name>
@@ -181,7 +184,7 @@ kumo sandbox <script-path>
 ### `upgrade [packages...]` (alias: `up`)
 Updates project dependencies to their latest available versions. By default, it respects semver ranges declared in your configuration file and updates both `dependencies` and `devDependencies`.
 
-- `[packages...]`: Specific packages to upgrade. If omitted, all dependencies are checked.
+- `[packages...]`: Specific packages to upgrade. Alternatively, you can specify `"major"`, `"minor"`, or `"patch"` as package arguments to restrict the upgrade scope to only major, minor, or patch releases across dependencies. If omitted, all dependencies are checked.
 - `-L, --latest`: Upgrade to the absolute latest version, ignoring semver ranges.
 - `-F, --fixed`: Save the exact version resolved in the configuration file rather than prefixing it with a semver range (like `^`).
 - `--prod`: Only upgrade `dependencies` (skip `devDependencies`).
@@ -192,6 +195,12 @@ Updates project dependencies to their latest available versions. By default, it 
 ```bash
 # Upgrade all dependencies within semver ranges
 kumo upgrade
+
+# Upgrade only patch releases for dependencies (e.g. 1.0.1 -> 1.0.2)
+kumo upgrade patch
+
+# Upgrade minor and patch releases for dependencies (e.g. 1.0.1 -> 1.1.2)
+kumo upgrade minor
 
 # Upgrade specific packages and write exact version numbers to package.json
 kumo upgrade express typescript --fixed
@@ -206,8 +215,7 @@ kumo upgrade --prod
 kumo upgrade --dry-run
 ```
 
-### `ts` (alias: `tsx`)
-Provides a built-in, 100% native Rust TypeScript execution and compilation toolchain. It utilizes the ultra-fast Oxc transpiler embedded directly in Kumo to perform offline, zero-dependency type-stripping (transpilation) without downloading any packages or requiring dynamic tools.
+### `ts`
 
 #### `ts init`
 Initializes a new TypeScript project by generating a default `tsconfig.json` file. It also creates a `.kumo/kumo.d.ts` declaration file in the project, automatically including it in the `tsconfig.json` `include` array. This registers types for the built-in global `Kumo` JavaScript API available when executing files via `kumo ts exec`.
@@ -237,9 +245,6 @@ kumo ts build src/index.ts --out build/
 # Bundle and minify everything into a single file named "test.js" in the "dist/" folder
 kumo ts build src/index.ts --bundle --minify --name test
 ```
-
-#### `ts check`
-Note that native Rust-based type checking is not supported. To type-check without emitting compiled files, please use the official `tsc --noEmit` tool.
 
 ```bash
 kumo ts check
@@ -323,13 +328,14 @@ kumo config default block_deprecated false
 ### `update [version] [--pre]`
 Checks for and installs the latest version (or a specified version) of the **Kumo CLI binary** from GitHub. This does not affect project dependencies — use `kumo upgrade` for that.
 
-- `[version]`: A specific version to upgrade/downgrade to (e.g. `1.0.6`).
+- `[version]`: A specific version to upgrade/downgrade to (e.g. `1.0.6`). Alternatively, you can specify one of `"alpha"`, `"beta"`, or `"rc"` to search for and update to the latest corresponding pre-release version.
 - `--pre`: Includes pre-releases (alpha, beta, rc) in the update search (ignored if a specific version is provided).
 
 ```bash
 kumo update
 kumo update 1.0.6
 kumo update --pre
+kumo update alpha
 ```
 
 ### `run [script] [args...]`
