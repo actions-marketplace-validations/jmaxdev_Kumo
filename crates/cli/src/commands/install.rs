@@ -417,8 +417,11 @@ pub async fn resolve_and_install(
         let _ = shield.shield_file(&config_path);
     }
 
+    let _ = crate::common::update_kumo_dts();
+
     Ok(())
 }
+
 
 pub async fn install_global(
     store: &Store,

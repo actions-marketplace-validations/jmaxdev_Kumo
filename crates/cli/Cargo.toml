@@ -36,6 +36,9 @@ oxc_span = "0.137.0"
 oxc_semantic = "0.137.0"
 oxc_transformer = "0.137.0"
 oxc_codegen = "0.137.0"
+oxc_ast = "0.137.0"
+regex = "1.10"
+
 
 [[bin]]
 name = "kumo"
