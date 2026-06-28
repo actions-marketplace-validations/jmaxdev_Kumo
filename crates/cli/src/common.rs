@@ -26,7 +26,12 @@ pub async fn init_components() -> Result<(Store, SecurityEngine, Resolver)> {
         if let Ok(global_val) = serde_json::from_str::<serde_json::Value>(&content) {
             if let Some(obj) = global_val.as_object() {
                 for (k, v) in obj {
-                    config_json[k] = v.clone();
+                    let key = if k == "allowedImportHosts" || k == "AllowedImportHosts" || k == "allowed_import_hosts" {
+                        "AllowedImportHost"
+                    } else {
+                        k.as_str()
+                    };
+                    config_json[key] = v.clone();
                 }
             }
         }
@@ -37,7 +42,12 @@ pub async fn init_components() -> Result<(Store, SecurityEngine, Resolver)> {
         if let Ok(local_val) = serde_json::from_str::<serde_json::Value>(&content) {
             if let Some(obj) = local_val.as_object() {
                 for (k, v) in obj {
-                    config_json[k] = v.clone();
+                    let key = if k == "allowedImportHosts" || k == "AllowedImportHosts" || k == "allowed_import_hosts" {
+                        "AllowedImportHost"
+                    } else {
+                        k.as_str()
+                    };
+                    config_json[key] = v.clone();
                 }
             }
         }

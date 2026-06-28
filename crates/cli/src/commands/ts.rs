@@ -52,14 +52,12 @@ impl super::Command for TsCommand {
                 if args.is_empty() {
                     anyhow::bail!("Usage: kumo ts exec <file.ts> [args...]");
                 }
-                let _polyfill_url = crate::common::ensure_kumo_polyfills()?;
-                let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
-                let loader_path = home.join(".kumo").join("lib").join("loader.mjs");
+                let polyfill_url = crate::common::ensure_kumo_polyfills()?;
                 let current_exe = std::env::current_exe()?;
 
                 let mut cmd = std::process::Command::new("node");
                 cmd.env("KUMO_BIN", current_exe);
-                cmd.arg("--import").arg(format!("file:///{}", loader_path.to_string_lossy().replace('\\', "/")));
+                cmd.arg("--import").arg(format!("file://{}", polyfill_url));
                 cmd.args(args);
 
                 #[cfg(windows)]
