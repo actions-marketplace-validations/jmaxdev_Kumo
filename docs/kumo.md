@@ -207,37 +207,36 @@ kumo upgrade --dry-run
 ```
 
 ### `ts` (alias: `tsx`)
-Provides a built-in TypeScript execution environment without requiring local dependencies. It automatically downloads the necessary compilers via Kumo Execute (`kx`) in the background.
+Provides a built-in, 100% native Rust TypeScript execution and compilation toolchain. It utilizes the ultra-fast Oxc transpiler embedded directly in Kumo to perform offline, zero-dependency type-stripping (transpilation) without downloading any packages or requiring dynamic tools.
 
 #### `ts init`
-Initializes a new TypeScript project by generating a default `tsconfig.json` file (runs `tsc --init`). It also creates a `.kumo/kumo.d.ts` declaration file in the project, automatically including it in the `tsconfig.json` `include` array. This registers types for the built-in global `Kumo` JavaScript API available when executing files via `kumo ts exec`.
+Initializes a new TypeScript project by generating a default `tsconfig.json` file. It also creates a `.kumo/kumo.d.ts` declaration file in the project, automatically including it in the `tsconfig.json` `include` array. This registers types for the built-in global `Kumo` JavaScript API available when executing files via `kumo ts exec`.
 
 ```bash
 kumo ts init
 ```
 
 #### `ts build`
-Runs the official TypeScript compiler (`tsc`) on your project.
+Recursively transpiles all `.ts` files in the current project directory (excluding `node_modules` and hidden directories) to JavaScript. Output `.js` files are written next to their source `.ts` files.
 
 ```bash
-kumo ts build src/index.ts
+kumo ts build
 ```
-_For configuration options, see the [tsc documentation](https://www.typescriptlang.org/docs/handbook/compiler-options.html)._
 
 #### `ts check`
-Type-checks the TypeScript project without emitting compiled files (runs `tsc --noEmit`).
+Note that native Rust-based type checking is not supported. To type-check without emitting compiled files, please use the official `tsc --noEmit` tool.
 
 ```bash
 kumo ts check
 ```
 
 #### `ts exec`
-Executes a TypeScript file directly using `tsx` (TypeScript Execute).
+Executes a TypeScript file directly using Node.js combined with the native Rust transpiler loader.
 
 ```bash
 kumo ts exec src/index.ts
 ```
-_For execution options, see the [tsx documentation](https://tsx.hirok.io/getting-started)._
+
 
 #### Global Kumo API
 

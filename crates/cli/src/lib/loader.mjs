@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 
 let configLoaded = false;
 let allowedImportHosts = [];
@@ -115,6 +116,36 @@ export async function resolve(specifier, context, nextResolve) {
     }
   }
 
+  if (!specifier.startsWith('node:') && !specifier.startsWith('npm:') && !specifier.includes('node_modules')) {
+    try {
+      const parent = context.parentURL || pathToFileURL(process.cwd() + '/').href;
+      const resolvedUrl = new URL(specifier, parent);
+      if (resolvedUrl.protocol === 'file:') {
+        const filePath = fileURLToPath(resolvedUrl.href);
+        if (!fs.existsSync(filePath)) {
+          if (fs.existsSync(filePath + '.ts')) {
+            return {
+              shortCircuit: true,
+              url: pathToFileURL(filePath + '.ts').href
+            };
+          } else if (fs.existsSync(filePath + '.js')) {
+            return {
+              shortCircuit: true,
+              url: pathToFileURL(filePath + '.js').href
+            };
+          }
+        } else if (filePath.endsWith('.ts')) {
+          return {
+            shortCircuit: true,
+            url: resolvedUrl.href
+          };
+        }
+      }
+    } catch (e) {
+      // safe fallback
+    }
+  }
+
   return nextResolve(specifier, context);
 }
 
@@ -148,6 +179,21 @@ export async function load(url, context, nextLoad) {
       format,
       source
     };
+  }
+
+  if (url.startsWith('file://') && url.endsWith('.ts')) {
+    const filePath = fileURLToPath(url);
+    const kumoBin = process.env.KUMO_BIN || 'kumo';
+    try {
+      const transpiled = execSync(`"${kumoBin}" ts transpile "${filePath}"`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'inherit'] });
+      return {
+        shortCircuit: true,
+        format: 'module',
+        source: transpiled
+      };
+    } catch (e) {
+      process.exit(1);
+    }
   }
 
   return nextLoad(url, context);
