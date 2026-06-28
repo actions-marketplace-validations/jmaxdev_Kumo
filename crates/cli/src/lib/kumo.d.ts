@@ -22,3 +22,15 @@ interface KumoAPI {
 }
 
 declare const Kumo: KumoAPI;
+
+// Wildcard modules for URL imports (HTTPS module loader)
+declare module "https://*" {
+    const value: any;
+    export default value;
+}
+
+declare module "http://*" {
+    const value: any;
+    export default value;
+}
+

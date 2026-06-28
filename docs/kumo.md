@@ -217,10 +217,25 @@ kumo ts init
 ```
 
 #### `ts build`
-Recursively transpiles all `.ts` files in the current project directory (excluding `node_modules` and hidden directories) to JavaScript. Output `.js` files are written next to their source `.ts` files.
+Transpiles TypeScript files. By default, it recursively transpiles all `.ts` files in the current project directory (excluding `node_modules` and hidden directories) to separate `.js` files in the output directory (`dist` by default).
+
+Alternatively, you can bundle all compiled modules into a single, self-contained file in the output directory using the `--bundle` flag.
+
+- `[file]`: Entry file or files/directories to build. If bundling, this is the entry point (defaults to `index.ts` or `src/index.ts`).
+- `--bundle`: Bundles the output and all its local dependencies recursively into a single file.
+- `--minify`: Minifies the output code.
+- `--name <name>`: Custom output bundle file name (defaults to `bundle.js`).
+- `--out <dir>`: Output directory for compiled files/bundles (defaults to `dist`).
 
 ```bash
+# Compile everything separately in the 'dist/' folder (by default)
 kumo ts build
+
+# Compile and save results in a different output folder
+kumo ts build src/index.ts --out build/
+
+# Bundle and minify everything into a single file named "test.js" in the "dist/" folder
+kumo ts build src/index.ts --bundle --minify --name test
 ```
 
 #### `ts check`
