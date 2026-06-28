@@ -110,7 +110,7 @@ pub async fn resolve_and_install(
             validate_typosquatting(security, &lockfile_old_copy, &deps, &lf)?;
             lf.config_hash = Some(config_hash);
             let yaml = serde_yml::to_string(&lf)?;
-            
+
             let shield = ShieldManager::new();
             if lock_path.exists() {
                 let _ = shield.unshield_file(&lock_path);
@@ -125,7 +125,7 @@ pub async fn resolve_and_install(
         validate_typosquatting(security, &lockfile_old_copy, &deps, &lf)?;
         lf.config_hash = Some(config_hash);
         let yaml = serde_yml::to_string(&lf)?;
-        
+
         let shield = ShieldManager::new();
         if lock_path.exists() {
             let _ = shield.unshield_file(&lock_path);
@@ -500,16 +500,16 @@ async fn run_install_scripts(
     security_engine: &security::SecurityEngine,
 ) -> Result<()> {
     let proxy_port = security::proxy::start_proxy(security_engine.policy.allowed_domains.clone()).await.ok();
-    
+
     for script_name in &["preinstall", "install", "postinstall"] {
         if let Some(script_content) = scripts.get(*script_name) {
 
             let mut all_warnings = Vec::new();
-            
+
             if let Ok(warnings) = security::ast::analyze_script(script_content) {
                 all_warnings.extend(warnings);
             }
-            
+
             let words: Vec<&str> = script_content.split_whitespace().collect();
             for word in words {
                 if word.ends_with(".js") || word.ends_with(".cjs") || word.ends_with(".mjs") || word.ends_with(".ts") {

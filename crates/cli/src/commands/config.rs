@@ -55,11 +55,11 @@ pub async fn execute(subcommand: ConfigSubcommand) -> Result<()> {
             };
 
             config_json.as_object_mut().unwrap().insert(setting.clone(), parsed_value);
-            
+
             if let Some(parent) = global_config.parent() {
                 tokio::fs::create_dir_all(parent).await?;
             }
-            
+
             std::fs::write(&global_config, serde_json::to_string_pretty(&config_json)?)?;
             println!("Global configuration updated: {} = {}", setting, value);
         }

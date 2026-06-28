@@ -27,13 +27,13 @@ impl super::Command for ShieldCommand {
 
 pub async fn execute(action: ShieldAction) -> Result<()> {
     let shield = ShieldManager::new();
-    
+
     match action {
         ShieldAction::On => {
             shield.set_active(true)?;
-            
+
             println!("🛡️  Kumo Shield activated!");
-            
+
             let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
             let objects_dir = home.join(".kumo").join("store").join("objects");
             let metadata_dir = home.join(".kumo").join("store").join("metadata");
@@ -64,7 +64,7 @@ pub async fn execute(action: ShieldAction) -> Result<()> {
         }
         ShieldAction::Off => {
             shield.set_active(false)?;
-            
+
             println!("🔓 Kumo Shield disabled.");
             println!("Packages and configurations can now be modified freely.");
         }
@@ -76,6 +76,6 @@ pub async fn execute(action: ShieldAction) -> Result<()> {
             }
         }
     }
-    
+
     Ok(())
 }

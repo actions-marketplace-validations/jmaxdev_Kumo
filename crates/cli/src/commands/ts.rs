@@ -113,7 +113,7 @@ impl super::Command for TsCommand {
                 } else {
                     println!("tsconfig.json already exists. Updated Kumo types in .kumo/");
                 }
-                
+
                 let pkg_json_path = current_dir.join("package.json");
                 if !pkg_json_path.exists() {
                     let pkg_json_content = r#"{
@@ -164,7 +164,7 @@ fn transpile_code(source: &str, filename: &str) -> std::result::Result<String, S
         .semantic;
 
     let options = TransformOptions::default();
-    
+
     let _ = Transformer::new(&allocator, Path::new(filename), &options)
         .build_with_scoping(semantic.into_scoping(), &mut program);
 
@@ -218,7 +218,7 @@ fn run_native_build(args: &[String], bundle: bool, minify: bool, name: Option<&s
     }
 
     let mut files = Vec::new();
-    
+
     fn visit_dirs(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) -> Result<()> {
         if dir.is_dir() {
             for entry in std::fs::read_dir(dir)? {
@@ -240,7 +240,7 @@ fn run_native_build(args: &[String], bundle: bool, minify: bool, name: Option<&s
         }
         Ok(())
     }
-    
+
     if args.is_empty() {
         println!("Compiling TypeScript files natively in current directory...");
         visit_dirs(&current_dir, &mut files)?;
@@ -267,7 +267,7 @@ fn run_native_build(args: &[String], bundle: bool, minify: bool, name: Option<&s
             }
         }
     }
-    
+
     let mut compiled_count = 0;
     for file_path in files {
         let rel_path = file_path.strip_prefix(&current_dir).unwrap_or(&file_path);
@@ -320,7 +320,7 @@ fn resolve_import(current_file: &std::path::Path, specifier: &str) -> Option<std
     }
     let parent = current_file.parent()?;
     let path = parent.join(specifier);
-    
+
     let candidates = [
         path.clone(),
         path.with_extension("ts"),
@@ -397,7 +397,7 @@ fn run_native_bundle(entry_path: &std::path::Path, minify: bool) -> Result<Strin
         visited.insert(abs_path.clone());
 
         let source = fs::read_to_string(&abs_path)?;
-        
+
         use oxc_allocator::Allocator;
         use oxc_parser::Parser;
         use oxc_span::SourceType;
@@ -442,7 +442,7 @@ fn run_native_bundle(entry_path: &std::path::Path, minify: bool) -> Result<Strin
         let transpiled_js = Codegen::new().with_options(codegen_options).build(&program_mut).code;
 
         let mut cjs_code = transpiled_js.clone();
-        
+
         cjs_code = cjs_code.replace("export const ", "const ");
         cjs_code = cjs_code.replace("export let ", "let ");
         cjs_code = cjs_code.replace("export var ", "var ");
@@ -529,7 +529,7 @@ function __kumo_require__(id, referrer = "__entry__") {
       }
       resolvedId = refParts.join("/");
     }
-    
+
     let candidates = [
       resolvedId,
       resolvedId + ".ts",
@@ -558,7 +558,7 @@ function __kumo_require__(id, referrer = "__entry__") {
 
   const module = { exports: {} };
   __kumo_cache__[resolvedId] = module;
-  
+
   const localRequire = (newId) => __kumo_require__(newId, resolvedId);
   __kumo_modules__[resolvedId](module.exports, localRequire, module);
   return module.exports;
@@ -590,19 +590,19 @@ mod tests {
         let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         let temp_dir = std::env::temp_dir().join(format!("kumo_test_{}", timestamp));
         let _ = std::fs::create_dir_all(&temp_dir);
-        
+
         let lib_path = temp_dir.join("lib.ts");
         let main_path = temp_dir.join("main.ts");
-        
+
         std::fs::write(&lib_path, "export const foo: number = 42;").unwrap();
         std::fs::write(&main_path, "import { foo } from './lib';\nconsole.log(foo);").unwrap();
-        
+
         let bundle_code = run_native_bundle(&main_path, false).unwrap();
         assert!(bundle_code.contains("__kumo_modules__"));
         assert!(bundle_code.contains("\"__entry__\""));
         assert!(bundle_code.contains("const { foo } = __kumo_require__(\"./lib\");"));
         assert!(bundle_code.contains("const foo = 42;"));
-        
+
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

@@ -16,7 +16,7 @@ impl super::Command for LockCommand {
 
 pub async fn execute(file: Option<String>) -> Result<()> {
     let shield = ShieldManager::new();
-    
+
     if !shield.is_active() {
         println!("🔓 Shield is not active.");
         return Ok(());

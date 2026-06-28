@@ -322,7 +322,7 @@ fn package_has_types(current_dir: &std::path::Path, name: &str) -> bool {
     let normalized_name = name.replace('/', std::path::MAIN_SEPARATOR_STR);
     let pkg_dir = current_dir.join(&deps_dir).join(&normalized_name);
 
-    // 1. Check if @types/name exists under node_modules/@types
+
     let types_name = if name.starts_with('@') {
         name.trim_start_matches('@').replace('/', "__")
     } else {
@@ -337,7 +337,7 @@ fn package_has_types(current_dir: &std::path::Path, name: &str) -> bool {
         return false;
     }
 
-    // 2. Check package.json for types/typings fields or exports pointing to .d.ts
+
     let pkg_json = pkg_dir.join("package.json");
     if pkg_json.exists() {
         if let Ok(content) = std::fs::read_to_string(&pkg_json) {
@@ -345,7 +345,7 @@ fn package_has_types(current_dir: &std::path::Path, name: &str) -> bool {
                 if val.get("types").is_some() || val.get("typings").is_some() {
                     return true;
                 }
-                // Check exports map
+
                 if let Some(exports) = val.get("exports") {
                     let exports_str = exports.to_string();
                     if exports_str.contains(".d.ts") {
@@ -356,7 +356,7 @@ fn package_has_types(current_dir: &std::path::Path, name: &str) -> bool {
         }
     }
 
-    // 3. Check for index.d.ts directly in the root or common subdirectories
+
     if pkg_dir.join("index.d.ts").exists() {
         return true;
     }
@@ -367,7 +367,7 @@ fn package_has_types(current_dir: &std::path::Path, name: &str) -> bool {
         return true;
     }
 
-    // 4. Scan root directory for any file ending with .d.ts
+
     if let Ok(entries) = std::fs::read_dir(&pkg_dir) {
         for entry in entries.flatten() {
             if let Some(ext) = entry.path().extension().and_then(|s| s.to_str()) {
@@ -395,7 +395,7 @@ pub fn update_kumo_dts() -> Result<()> {
 
     let mut dep_names = std::collections::BTreeSet::new();
 
-    // 1. Scan package.json
+
     let pkg_json_path = current_dir.join(kumo_core::config::PACKAGE_JSON);
     if pkg_json_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&pkg_json_path) {
@@ -414,7 +414,7 @@ pub fn update_kumo_dts() -> Result<()> {
         }
     }
 
-    // 2. Scan kumo.json
+
     let kumo_json_path = current_dir.join(kumo_core::config::KUMO_JSON);
     if kumo_json_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&kumo_json_path) {
@@ -433,7 +433,7 @@ pub fn update_kumo_dts() -> Result<()> {
         }
     }
 
-    // 3. Scan kumo.lock
+
     let lock_path = current_dir.join(kumo_core::config::KUMO_LOCK);
     if lock_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&lock_path) {
@@ -453,7 +453,7 @@ pub fn update_kumo_dts() -> Result<()> {
 
     if !dep_names.is_empty() {
         for name in &dep_names {
-            // Generate wildcard module declarations matching any domain/CDN (like esm.sh, unpkg, custom registry, etc.)
+
             url_decls.push_str(&format!(
                 "declare module \"https://*/{}\" {{\n    export * from \"{}\";\n    const _default: any;\n    export default _default;\n}}\n\n",
                 name, name
@@ -564,14 +564,14 @@ mod tests {
         assert!(policy.allowed_import_hosts.contains("cdn.jsdelivr.net"));
         assert_eq!(policy.allowed_import_hosts.len(), 2);
 
-        // Test with alias allowedImportHosts
+
         let json_data_alias1 = r#"{
             "allowedImportHosts": ["unpkg.com"]
         }"#;
         let policy_alias1: Policy = serde_json::from_str(json_data_alias1).unwrap();
         assert!(policy_alias1.allowed_import_hosts.contains("unpkg.com"));
 
-        // Test serialization
+
         let policy_default = Policy::default();
         let serialized = serde_json::to_string(&policy_default).unwrap();
         assert!(serialized.contains("\"AllowedImportHost\":"));
@@ -589,25 +589,25 @@ mod tests {
         let node_modules_dir = temp_dir.join("node_modules");
         std::fs::create_dir_all(&node_modules_dir).unwrap();
 
-        // 1. Package with no types
+
         let pkg_no_types = node_modules_dir.join("pkg-no-types");
         std::fs::create_dir_all(&pkg_no_types).unwrap();
         std::fs::write(pkg_no_types.join("package.json"), r#"{"name": "pkg-no-types"}"#).unwrap();
         std::fs::write(pkg_no_types.join("index.js"), "module.exports = {};").unwrap();
 
-        // 2. Package with index.d.ts
+
         let pkg_with_dts = node_modules_dir.join("pkg-with-dts");
         std::fs::create_dir_all(&pkg_with_dts).unwrap();
         std::fs::write(pkg_with_dts.join("package.json"), r#"{"name": "pkg-with-dts"}"#).unwrap();
         std::fs::write(pkg_with_dts.join("index.d.ts"), "export declare const foo: string;").unwrap();
 
-        // 3. Package with types field in package.json
+
         let pkg_with_types_field = node_modules_dir.join("pkg-with-types-field");
         std::fs::create_dir_all(&pkg_with_types_field).unwrap();
         std::fs::write(pkg_with_types_field.join("package.json"), r#"{"name": "pkg-with-types-field", "types": "./types.d.ts"}"#).unwrap();
         std::fs::write(pkg_with_types_field.join("types.d.ts"), "export declare const bar: number;").unwrap();
 
-        // 4. Package with @types installed
+
         let pkg_with_external_types = node_modules_dir.join("pkg-with-external-types");
         std::fs::create_dir_all(&pkg_with_external_types).unwrap();
         std::fs::write(pkg_with_external_types.join("package.json"), r#"{"name": "pkg-with-external-types"}"#).unwrap();

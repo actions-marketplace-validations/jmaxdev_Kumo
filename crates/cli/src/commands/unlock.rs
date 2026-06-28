@@ -17,7 +17,7 @@ impl super::Command for UnlockCommand {
 
 pub async fn execute(file: String) -> Result<()> {
     let shield = ShieldManager::new();
-    
+
     if !shield.is_active() {
         println!("🔓 Shield is not active. Files can be modified normally.");
         return Ok(());
@@ -25,7 +25,7 @@ pub async fn execute(file: String) -> Result<()> {
 
     let allowed_files = [kumo_core::config::KUMO_CONFIG_JSON, kumo_core::config::KUMO_LOCK];
     let filename = Path::new(&file).file_name().unwrap_or_default().to_string_lossy();
-    
+
     if !allowed_files.contains(&filename.as_ref()) {
         anyhow::bail!("Security violation: Only {} and {} can be unlocked.", kumo_core::config::KUMO_CONFIG_JSON, kumo_core::config::KUMO_LOCK);
     }
@@ -52,7 +52,7 @@ async fn unlock_file(path: &Path, shield: &ShieldManager) -> Result<()> {
 
     let file_name = path.file_name().unwrap_or_default().to_string_lossy();
     println!("⚠️  You are about to unlock {} which is currently protected by Kumo Shield.", file_name);
-    
+
     let confirm = Confirm::new()
         .with_prompt(format!("Are you sure you want to unlock {}?", file_name))
         .default(false)

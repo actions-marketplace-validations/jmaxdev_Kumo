@@ -206,9 +206,9 @@ async fn prune_deps(full: bool, remove_all: bool, path: Option<String>) -> Resul
         }
 
         find_targets(&current_dir, &deps_dir, full, &mut paths_to_delete);
-        
+
         spinner.set_message("Calculating disk space usage...");
-        
+
         let path_sizes: Vec<(std::path::PathBuf, u64)> = paths_to_delete
             .par_iter()
             .map(|path| {

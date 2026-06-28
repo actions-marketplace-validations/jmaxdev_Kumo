@@ -55,7 +55,7 @@ pub async fn execute(name: &str, args: Vec<String>) -> Result<()> {
                 "src/**/*.jsx".to_string(),
                 "src/**/*.cjs".to_string(),
                 "src/**/*.mjs".to_string(),
-                
+
 
                 "*.ts".to_string(),
                 "*.tsx".to_string(),
@@ -67,7 +67,7 @@ pub async fn execute(name: &str, args: Vec<String>) -> Result<()> {
                 "lib/**/*.js".to_string(),
                 "lib/**/*.cjs".to_string(),
                 "lib/**/*.mjs".to_string(),
-                
+
 
                 "app/**/*.ts".to_string(),
                 "app/**/*.tsx".to_string(),
@@ -109,7 +109,7 @@ pub async fn execute(name: &str, args: Vec<String>) -> Result<()> {
             if let Some(script_cmd) = v["scripts"][name].as_str() {
                 let cache_dir = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".kumo").join("cache").join("scripts");
                 let mut hash_val = String::new();
-                
+
                 if use_cache {
                     let mut hasher = blake3::Hasher::new();
                     hasher.update(script_cmd.as_bytes());
@@ -137,7 +137,7 @@ pub async fn execute(name: &str, args: Vec<String>) -> Result<()> {
                     let specific_cache = cache_dir.join(&hash_val);
                     if specific_cache.exists() {
                         println!("⚡ \x1b[32mKumo Cache Hit:\x1b[0m {} [{}]", name, &hash_val[0..8]);
-                        
+
                         if let Ok(out_log) = std::fs::read(specific_cache.join("stdout.log")) {
                             use std::io::Write;
                             let _ = std::io::stdout().write_all(&out_log);
@@ -203,16 +203,16 @@ pub async fn execute(name: &str, args: Vec<String>) -> Result<()> {
                     let mut child = cmd.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn()?;
                     let stdout = child.stdout.take().unwrap();
                     let stderr = child.stderr.take().unwrap();
-                    
+
                     let mut stdout_log = Vec::new();
                     let mut stderr_log = Vec::new();
-                    
+
                     let mut out_reader = std::io::BufReader::new(stdout);
                     let mut err_reader = std::io::BufReader::new(stderr);
-                    
+
                     let mut stdout_writer = std::io::stdout();
                     let mut stderr_writer = std::io::stderr();
-                    
+
                     let out_handle = std::thread::spawn(move || {
                         use std::io::Read;
                         let mut buf = [0; 1024];
@@ -224,7 +224,7 @@ pub async fn execute(name: &str, args: Vec<String>) -> Result<()> {
                         }
                         stdout_log
                     });
-                    
+
                     let err_handle = std::thread::spawn(move || {
                         use std::io::Read;
                         let mut buf = [0; 1024];
@@ -236,7 +236,7 @@ pub async fn execute(name: &str, args: Vec<String>) -> Result<()> {
                         }
                         stderr_log
                     });
-                    
+
                     let status = child.wait()?;
                     let stdout_res = out_handle.join().unwrap();
                     let stderr_res = err_handle.join().unwrap();
@@ -308,7 +308,7 @@ pub async fn execute(name: &str, args: Vec<String>) -> Result<()> {
 
     let fallback_global_bin = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".kumo").join("bin").join(name);
     let fallback_global_bin_cmd = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".kumo").join("bin").join(format!("{}.cmd", name));
-    
+
     let actual_global = if fallback_global_bin.exists() {
         Some(fallback_global_bin)
     } else if fallback_global_bin_cmd.exists() {
@@ -334,11 +334,11 @@ pub async fn execute(name: &str, args: Vec<String>) -> Result<()> {
 
 pub async fn execute_interactive() -> Result<()> {
     use dialoguer::{theme::ColorfulTheme, Select};
-    
+
     let project_dir = std::env::current_dir()?;
     let config_files = ["package.json", "kumo.json"];
     let mut scripts = std::collections::BTreeMap::new();
-    
+
     for config_file in config_files {
         let path = project_dir.join(config_file);
         if path.exists() {
@@ -354,28 +354,28 @@ pub async fn execute_interactive() -> Result<()> {
             }
         }
     }
-    
+
     if scripts.is_empty() {
         anyhow::bail!("No scripts found in package.json or kumo.json");
     }
-    
+
     let mut items = Vec::new();
     let mut keys = Vec::new();
-    
+
     for (k, v) in &scripts {
         items.push(format!("{:<15} {}", k, v));
         keys.push(k.clone());
     }
-    
+
     println!("Select a script to run:");
     let selection = Select::with_theme(&ColorfulTheme::default())
         .items(&items)
         .default(0)
         .interact()?;
-        
+
     let selected_script = &keys[selection];
     println!("Running script '{}'...", selected_script);
-    
+
     let args = Vec::new();
     execute(selected_script, args).await
 }

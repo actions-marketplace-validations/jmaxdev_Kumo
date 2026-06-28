@@ -10,7 +10,7 @@ async function loadConfig() {
   if (configLoaded) return;
   configLoaded = true;
 
-  // Try JSON first
+
   try {
     const jsonPath = path.join(process.cwd(), 'kumo.config.json');
     if (fs.existsSync(jsonPath)) {
@@ -23,7 +23,7 @@ async function loadConfig() {
     }
   } catch (e) { }
 
-  // Try JS next
+
   try {
     const jsPath = path.join(process.cwd(), 'kumo.config.js');
     if (fs.existsSync(jsPath)) {
@@ -142,7 +142,7 @@ export async function resolve(specifier, context, nextResolve) {
         }
       }
     } catch (e) {
-      // safe fallback
+
     }
   }
 

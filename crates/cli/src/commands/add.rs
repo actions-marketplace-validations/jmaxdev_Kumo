@@ -41,7 +41,7 @@ pub async fn execute(
         let config_path = config_path.ok_or_else(|| {
             anyhow::anyhow!("Neither kumo.json nor package.json found in current directory")
         })?;
-        
+
         println!("Resolving package {}@{}...", pkg_name, version_req);
         let meta = resolver.resolve_package_fresh(&pkg_name, &version_req).await?;
         let resolved_version = meta.version.to_string();
