@@ -246,6 +246,12 @@ kumo ts build src/index.ts --out build/
 kumo ts build src/index.ts --bundle --minify --name test
 ```
 
+#### `ts check`
+Runs a type-check on the TypeScript project.
+
+> [!WARNING]
+> Native Rust-based type-checking is not currently supported. Executing `kumo ts check` will abort and advise you to use the official TypeScript compiler (`tsc --noEmit`) for type checking.
+
 ```bash
 kumo ts check
 ```
@@ -272,7 +278,7 @@ When executing a TypeScript/JavaScript file using `kumo ts exec`, Kumo registers
 - **`Kumo.spawn(command, args?, options?)`**: Helper to spawn child processes, returning a process wrapper.
 - **`Kumo.sleep(ms)`**: Helper promise that resolves after the specified milliseconds.
 - **`Kumo.serve(options)`**: Spawns a lightweight HTTP server (default port: `3000`) with a custom `fetch(request: Request): Promise<Response> | Response` request handler.
-- **`Kumo.pkg.readConfig()`**: Parses and returns the project's local `kumo.json` or `package.json` file.
+- **`Kumo.pkg.readConfig()`**: Parses and returns the project's local `kumo.json` configuration file. Note that it only checks for `kumo.json` and returns `null` if it is not present (it does not fall back to `package.json`).
 
 Example usage:
 ```typescript

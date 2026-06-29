@@ -30,7 +30,7 @@ kumo config init
 | `registry` | String | Default registry to use. Supported values are `"npm"`, `"kumo"`, or any custom HTTP/HTTPS URL. | `"npm"` |
 | `useNodeModules` | Boolean | If `true`, Kumo will link dependencies into a `node_modules` directory natively for maximum compatibility with standard tools, rather than the default `dependencies` directory. | `false` |
 | `cache` | Object | Configures custom inputs and outputs for script caching (`kumo run`). See [caching documentation](caching.md) for schema details. | `{}` |
-| `AllowedImportHost` | Array | A whitelist of allowed hostnames for HTTPS module imports in scripts (e.g. `["esm.sh"]`). If empty or omitted, all URL imports are blocked by default. | `[]` |
+| `AllowedImportHost` | Array | A whitelist of allowed hostnames for HTTPS module imports in scripts (e.g. `["esm.sh"]`). Supported aliases: `allowedImportHosts`, `AllowedImportHosts`, `allowed_import_hosts`. If empty or omitted, all URL imports are blocked by default. | `[]` |
 
 ### Registry Override (`KUMO_REGISTRY`)
 
@@ -68,6 +68,7 @@ To guarantee absolute protection, when scripts are allowed, Kumo executes them i
 Attackers often release packages with names very similar to popular ones (e.g. `axois-utils` or `chalk-tempalte`). Kumo provides two layers of defense against this:
 1. **Age Threshold (`minimum_release_age`):** Enforces a default 24-hour minimum age for package releases, ensuring freshly published malicious copycats are blocked.
 2. **Levenshtein Distance Check:** Compares newly resolved package names against the project's **existing dependencies**, popular packages, and any names you define in your `protected_packages` config array.
+   * **Name Normalization:** For scoped packages (e.g. `@scope/package-name`), the typosquatting engine normalizes the name to its base name (`package-name`) before performing similarity checks against popular or protected packages.
    To avoid false positives, the typosquatting engine will **skip checks** if:
    * The package name is very short (length ≤ 3).
    * The difference in name length between the packages is > 2.
@@ -148,7 +149,11 @@ When running TypeScript/JavaScript scripts using the `kumo ts exec` execution en
    - `127.0.0.1`
    - `[::1]`
    - `0.0.0.0`
-3. **Allowed Import Hosts (Whitelist)**: By default, **all HTTPS module imports are blocked** to prevent unauthorized remote code execution. To allow imports from trusted registries or CDNs, you must configure the whitelisted hosts list under the key `AllowedImportHost` (also accepts `allowedImportHosts`) in your configuration files:
+3. **Allowed Import Hosts (Whitelist)**: By default, **all HTTPS module imports are blocked** to prevent unauthorized remote code execution. To allow imports from trusted registries or CDNs, you must configure the whitelisted hosts list under the key `AllowedImportHost` (which also accepts the aliases `allowedImportHosts`, `AllowedImportHosts`, or `allowed_import_hosts`) in your local configuration files.
+
+   > [!NOTE]
+   > The custom module loader resolves these settings from the current working directory (`process.cwd()`) and does not read from the global `~/.kumo/kumo.config.json` user configuration.
+
    - **`kumo.config.json`**:
      ```json
      {
