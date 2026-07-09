@@ -50,6 +50,11 @@ pub async fn execute(action: ShieldAction) -> Result<()> {
                 let _ = shield.shield_dir_recursive(&cache_dir);
             }
 
+            let credentials_file = home.join(".kumo").join(kumo_core::config::CREDENTIALS_FILE);
+            if credentials_file.exists() {
+                let _ = shield.shield_file(&credentials_file);
+            }
+
             if let Ok(cwd) = std::env::current_dir() {
                 for file in [kumo_core::config::KUMO_LOCK, kumo_core::config::KUMO_JSON, kumo_core::config::KUMO_CONFIG_JSON] {
                     let path = cwd.join(file);
@@ -64,6 +69,21 @@ pub async fn execute(action: ShieldAction) -> Result<()> {
         }
         ShieldAction::Off => {
             shield.set_active(false)?;
+
+            let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+            let credentials_file = home.join(".kumo").join(kumo_core::config::CREDENTIALS_FILE);
+            if credentials_file.exists() {
+                let _ = shield.unshield_file(&credentials_file);
+            }
+
+            if let Ok(cwd) = std::env::current_dir() {
+                for file in [kumo_core::config::KUMO_LOCK, kumo_core::config::KUMO_JSON, kumo_core::config::KUMO_CONFIG_JSON] {
+                    let path = cwd.join(file);
+                    if path.exists() {
+                        let _ = shield.unshield_file(&path);
+                    }
+                }
+            }
 
             println!("🔓 Kumo Shield disabled.");
             println!("Packages and configurations can now be modified freely.");

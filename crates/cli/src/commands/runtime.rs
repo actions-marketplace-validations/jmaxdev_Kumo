@@ -252,6 +252,57 @@ fn check_eol_version(version: &str) -> Result<bool> {
     Ok(true)
 }
 
+fn check_security_vulnerability(releases: &[serde_json::Value], version: &str) -> Result<bool> {
+    let target_ver = semver::Version::parse(version.strip_prefix('v').unwrap_or(version))?;
+
+    let mut newer_security_release = None;
+    for r in releases {
+        if let Some(v_str) = r["version"].as_str() {
+            if let Ok(v) = semver::Version::parse(v_str.strip_prefix('v').unwrap_or(v_str)) {
+                if v.major == target_ver.major && v > target_ver && r["security"].as_bool() == Some(true) {
+                    if newer_security_release.is_none() || Some(&v) > newer_security_release.as_ref() {
+                        newer_security_release = Some(v);
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(newer) = newer_security_release {
+        use std::io::IsTerminal;
+        if !std::io::stdin().is_terminal() {
+            anyhow::bail!(
+                "Refusing to install vulnerable Node.js {} in non-interactive mode. \
+                 Newer version v{} contains critical security patches.",
+                version,
+                newer
+            );
+        }
+
+        println!(
+            "\n\x1b[33m⚠  Node.js {} is missing subsequent security updates.\x1b[0m",
+            version
+        );
+        println!(
+            "   A newer version (v{}) contains critical vulnerability patches.\n",
+            newer
+        );
+
+        let confirm = Confirm::new()
+            .with_prompt("Are you sure you want to install this version?")
+            .default(false)
+            .interact()
+            .context("Failed to read user confirmation")?;
+
+        if !confirm {
+            println!("\nOperation cancelled.");
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
 fn create_node_shim(bin_dir: &std::path::Path, node_bin_path: &std::path::Path) -> Result<()> {
     std::fs::create_dir_all(bin_dir)?;
 
@@ -289,6 +340,14 @@ async fn use_runtime(specifier: &str, local: bool) -> Result<()> {
         return Ok(());
     }
 
+    if !check_security_vulnerability(&releases, &version)? {
+        return Ok(());
+    }
+
+    let is_security_release = releases.iter().find(|r| {
+        r["version"].as_str().map(|v| v == version).unwrap_or(false)
+    }).and_then(|r| r["security"].as_bool()).unwrap_or(false);
+
     let runtimes_dir = if local {
         get_local_runtimes_dir()?
     } else {
@@ -304,6 +363,9 @@ async fn use_runtime(specifier: &str, local: bool) -> Result<()> {
         let node_bin = version_dir.join(get_node_binary_subpath());
         create_node_shim(&bin_dir, &node_bin)?;
         println!("Active version set to {}.", version);
+        if is_security_release {
+            println!("\x1b[36mℹ Note:\x1b[0m Node.js {} is a security release containing vulnerability fixes.", version);
+        }
         return Ok(());
     }
 
@@ -432,6 +494,10 @@ async fn use_runtime(specifier: &str, local: bool) -> Result<()> {
         version, scope
     );
 
+    if is_security_release {
+        println!("\x1b[36mℹ Note:\x1b[0m Node.js {} is a security release containing vulnerability fixes.", version);
+    }
+
     if !local {
         let bin = get_global_bin_dir()?;
         let old_path = std::env::var("PATH").unwrap_or_default();
@@ -484,6 +550,18 @@ async fn list_runtimes() -> Result<()> {
         return Ok(());
     }
 
+    let releases = fetch_node_index().await.ok();
+    let is_security = |v: &str| -> bool {
+        if let Some(ref rels) = releases {
+            rels.iter()
+                .find(|r| r["version"].as_str().map(|ver| ver == v).unwrap_or(false))
+                .and_then(|r| r["security"].as_bool())
+                .unwrap_or(false)
+        } else {
+            false
+        }
+    };
+
     let active = get_active_version(&runtimes_dir);
     let mut versions: Vec<String> = Vec::new();
 
@@ -513,10 +591,11 @@ async fn list_runtimes() -> Result<()> {
     println!("Installed Node.js versions:\n");
     for version in &versions {
         let is_active = active.as_deref() == Some(version.as_str());
+        let sec_label = if is_security(version) { " [Security]" } else { "" };
         if is_active {
-            println!("  \x1b[32m→ {}\x1b[0m  (active)", version);
+            println!("  \x1b[32m→ {}\x1b[0m  (active){}", version, sec_label);
         } else {
-            println!("    {}", version);
+            println!("    {}{}", version, sec_label);
         }
     }
     println!();
@@ -541,10 +620,11 @@ async fn list_runtimes() -> Result<()> {
                 println!("Local versions (this project):\n");
                 for version in &local_versions {
                     let is_active = local_active.as_deref() == Some(version.as_str());
+                    let sec_label = if is_security(version) { " [Security]" } else { "" };
                     if is_active {
-                        println!("  \x1b[32m→ {}\x1b[0m  (active)", version);
+                        println!("  \x1b[32m→ {}\x1b[0m  (active){}", version, sec_label);
                     } else {
-                        println!("    {}", version);
+                        println!("    {}{}", version, sec_label);
                     }
                 }
                 println!();

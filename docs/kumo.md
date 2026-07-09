@@ -222,7 +222,12 @@ kumo runtime remove v22.11.0 -l
 ```
 
 > [!WARNING]
-> Installing/using Node.js versions that have reached **End of Life (EOL)** (v20 and below) will trigger an interactive security prompt. Non-interactive environments will refuse the installation entirely.
+> **Security Guardrails:**
+> - **End of Life (EOL):** Installing or using Node.js versions that have reached EOL (v20 and below) will trigger an interactive confirmation prompt.
+> - **Outstanding Security Fixes:** If you attempt to use or install a version that has known vulnerabilities (i.e. a newer version in the same major branch has a security release containing vulnerability fixes), Kumo will display a warning and ask for confirmation.
+> - **Non-Interactive Environments:** In non-interactive contexts (CI/CD, scripts, etc.), Kumo will automatically refuse the installation/activation of EOL or vulnerable versions to protect your environment.
+> - **Security Badges:** When running `kumo runtime list`, versions that are officially marked as security releases will have a `[Security]` badge next to them. Additionally, when you install or activate a security release, Kumo will display a notice informing you of the vulnerability fixes.
+
 
 
 ### `upgrade [packages...]` (alias: `up`)

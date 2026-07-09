@@ -67,7 +67,6 @@ pub const SANDBOX_MACOS_TEMP_SUBPATH: &str = "/private/tmp";
 pub const PRIVATE_KEY_FILE: &str = "private_key.pem";
 pub const PUBLIC_KEY_FILE: &str = "public_key.pem";
 
-// Runtime management
 pub const NODE_DIST_URL: &str = "https://nodejs.org/dist";
 pub const NODE_DIST_INDEX_URL: &str = "https://nodejs.org/dist/index.json";
 pub const RUNTIMES_DIR_NAME: &str = "runtimes";

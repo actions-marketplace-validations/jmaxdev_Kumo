@@ -34,8 +34,16 @@ pub fn save_credentials(creds: &Credentials) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    let shield = crate::shield::ShieldManager::new();
+    let is_shield_active = shield.is_active();
+    if is_shield_active {
+        let _ = shield.unshield_file(&path);
+    }
     let json = serde_json::to_string_pretty(creds)?;
     std::fs::write(&path, json)?;
+    if is_shield_active {
+        let _ = shield.shield_file(&path);
+    }
     Ok(())
 }
 
