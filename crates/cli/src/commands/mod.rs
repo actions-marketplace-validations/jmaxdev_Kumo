@@ -141,4 +141,9 @@ register_commands!(
     deps,
     #[command(about = "Initialize a new package.json file")]
     init,
+    #[command(
+        alias = "rt",
+        about = "Manage Node.js runtime versions"
+    )]
+    runtime,
 );

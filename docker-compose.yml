@@ -1,0 +1,28 @@
+# ============================================================
+# Kumo - Docker Compose (Development / Local Testing)
+# ============================================================
+# Usage:
+#   docker compose build
+#   docker compose run --rm kumo install
+#   docker compose up
+# ============================================================
+
+services:
+  kumo:
+    build: .
+    image: ghcr.io/jmaxdev/kumo:local
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount your project into the container
+      - .:/app
+      # Persist the global store between runs for faster installs
+      - kumo-store:/root/.kumo
+    working_dir: /app
+    # Override entrypoint for interactive/dev usage
+    entrypoint: ["kumo"]
+    command: ["start"]
+
+volumes:
+  kumo-store:
+    driver: local

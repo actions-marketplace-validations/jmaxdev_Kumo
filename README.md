@@ -48,6 +48,27 @@ The executable is generated at `target/release/kumo` (on Windows `target/release
 
 ---
 
+## 🐳 Docker
+
+Use the official Docker image to run Node.js projects with Kumo:
+
+```dockerfile
+FROM ghcr.io/jmaxdev/kumo
+WORKDIR /app
+COPY . .
+RUN kumo install
+CMD ["kumo", "start"]
+```
+
+```bash
+docker build -t my-app .
+docker run -p 3000:3000 my-app
+```
+
+See the full **[Docker Documentation](docs/docker.md)** for production patterns, available tags, and caching strategies.
+
+---
+
 ## 📖 Documentation Reference
 
 Detailed documentation is organized in the following sections:
@@ -57,6 +78,7 @@ Detailed documentation is organized in the following sections:
 * 🛡️ **[Security Engine & Sandboxing](docs/security.md)** - Explanations on OS-level isolation, typosquatting checks, and trust levels.
 * ⚡ **[BLAKE3 Caching & CAS Store](docs/caching.md)** - Overview of Kumo's zero-config script caching and artifact store.
 * 📈 **[Performance Benchmarks](docs/benchmark.md)** - Statistical comparisons against npm, pnpm, and bun.
+* 🐳 **[Docker Support](docs/docker.md)** - Official Docker image usage, production patterns, and CI caching.
 * 🤝 **[Contributing Guide](docs/contributing.md)** - Rules and processes for contributors under the UPL 1.0.
 
 ---

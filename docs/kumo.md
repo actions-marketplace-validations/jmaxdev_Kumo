@@ -181,6 +181,50 @@ Executes a script within the Kumo Sandbox for secure execution.
 kumo sandbox <script-path>
 ```
 
+### `runtime` (alias: `rt`)
+Manages Node.js runtime versions. By default, runtimes are installed globally in `~/.kumo/runtimes/node/`.
+
+#### `runtime use <version>`
+Installs and/or switches to the specified Node.js version.
+
+- `<version>`: A version specifier — `latest`, `lts`, a codename (e.g. `iron`), a major version (e.g. `22`), or an exact version (e.g. `22.11.0`).
+- `-l, --local`: Switch to or install the runtime locally in the project's `.kumo/runtimes/node/` directory instead of globally.
+
+```bash
+# Install and use the latest Node.js version globally
+kumo runtime use latest
+
+# Install and use the latest LTS globally
+kumo runtime use lts
+
+# Switch to/install a major version globally
+kumo runtime use 22
+
+# Switch to/install a specific version locally in the project
+kumo runtime use 22.11.0 -l
+```
+
+#### `runtime list`
+Lists all installed Node.js versions (both global and local) and highlights the currently active ones.
+
+```bash
+kumo runtime list
+```
+
+#### `runtime remove <version>`
+Removes an installed Node.js version. If it was the active version, the active selection and shims are cleared.
+
+- `-l, --local`: Remove a locally installed version instead of a global one.
+
+```bash
+kumo runtime remove v20.18.0
+kumo runtime remove v22.11.0 -l
+```
+
+> [!WARNING]
+> Installing/using Node.js versions that have reached **End of Life (EOL)** (v20 and below) will trigger an interactive security prompt. Non-interactive environments will refuse the installation entirely.
+
+
 ### `upgrade [packages...]` (alias: `up`)
 Updates project dependencies to their latest available versions. By default, it respects semver ranges declared in your configuration file and updates both `dependencies` and `devDependencies`.
 

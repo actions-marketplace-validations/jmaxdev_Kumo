@@ -1,0 +1,29 @@
+# Build artifacts
+target/
+# Version control
+.git/
+.github/
+# Documentation & metadata
+docs/
+README.md
+LICENSE.md
+*.md
+# Development files
+scripts/
+*.ps1
+*.sh
+text.txt
+prepare_benchmark.ps1
+benchmark.ps1
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+# Docker (prevent recursive builds)
+Dockerfile
+docker-compose.yml
+.dockerignore
