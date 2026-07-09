@@ -11,7 +11,7 @@
 # ============================================================
 
 # ── Stage 1: Build Kumo from source ─────────────────────────
-FROM rust:1.87-slim AS builder
+FROM rust:1.94-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
