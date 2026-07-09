@@ -18,7 +18,7 @@ RUN kumo runtime use 22
 
 # 2. Setup your application
 WORKDIR /app
-COPY package.json kumo.lock ./
+COPY package.json kumo.lock* ./
 RUN kumo install
 
 COPY . .
@@ -73,7 +73,7 @@ For optimized production images, you can use a multi-stage build:
 FROM ghcr.io/jmaxdev/kumo AS deps
 RUN kumo runtime use 22
 WORKDIR /app
-COPY package.json kumo.lock ./
+COPY package.json kumo.lock* ./
 RUN kumo install
 
 # Stage 2: Build application
