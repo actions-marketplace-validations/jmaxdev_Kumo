@@ -118,7 +118,7 @@ register_commands!(
     config,
     #[command(
         alias = "tsx",
-        about = "Execute TypeScript files via tsx or compile with tsc"
+        about = "Transpile, bundle, or execute TypeScript files natively"
     )]
     ts,
     #[command(about = "Symlink a local package into the project for development")]

@@ -23,7 +23,7 @@ RUN kumo install
 
 COPY . .
 # run your start script
-CMD ["kumo", "start"]
+CMD ["start"]
 ```
 
 Build and run:
@@ -90,7 +90,7 @@ WORKDIR /app
 COPY --from=builder /app/dist ./dist
 COPY --from=deps /app/node_modules ./node_modules
 EXPOSE 3000
-CMD ["kumo", "start"]
+CMD ["node", "dist/index.js"]
 ```
 
 ---
@@ -108,7 +108,7 @@ services:
     volumes:
       - .:/app
       - kumo-store:/root/.kumo  # Persist global store and installed runtimes
-    command: ["kumo", "start"]
+    command: ["start"]
 
 volumes:
   kumo-store:

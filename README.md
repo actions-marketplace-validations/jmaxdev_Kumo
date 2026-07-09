@@ -54,10 +54,11 @@ Use the official Docker image to run Node.js projects with Kumo:
 
 ```dockerfile
 FROM ghcr.io/jmaxdev/kumo
+RUN kumo runtime use 22
 WORKDIR /app
 COPY . .
 RUN kumo install
-CMD ["kumo", "start"]
+CMD ["start"]
 ```
 
 ```bash

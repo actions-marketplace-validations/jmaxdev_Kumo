@@ -3,7 +3,7 @@ use clap::Subcommand;
 
 #[derive(Subcommand, Clone)]
 pub enum TsSubcommand {
-    #[command(about = "Run the TypeScript compiler (tsc). Docs: https://www.typescriptlang.org/docs/handbook/compiler-options.html")]
+    #[command(about = "Transpile and optionally bundle TypeScript files natively")]
     Build {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
@@ -16,14 +16,14 @@ pub enum TsSubcommand {
         #[arg(long, default_value = "dist", help = "Output directory")]
         out: String,
     },
-    #[command(about = "Execute a TypeScript file directly (tsx). Docs: https://tsx.hirok.io/getting-started")]
+    #[command(about = "Execute a TypeScript file directly using Node.js and the native transpiler")]
     Exec {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    #[command(about = "Initialize a new TypeScript project (tsc --init)")]
+    #[command(about = "Initialize a new TypeScript project configuration and Kumo type declarations")]
     Init,
-    #[command(about = "Type-check the project without emitting files (tsc --noEmit)")]
+    #[command(about = "Type-check the project (advises using official tsc --noEmit)")]
     Check {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
@@ -49,16 +49,24 @@ impl super::Command for TsCommand {
                 Ok(())
             }
             TsSubcommand::Exec { args } => {
-                if args.is_empty() {
-                    anyhow::bail!("Usage: kumo ts exec <file.ts> [args...]");
-                }
+                let exec_args = if args.is_empty() {
+                    let current_dir = std::env::current_dir()?;
+                    if let Some(file) = resolve_exec_entry_file(&current_dir) {
+                        vec![file]
+                    } else {
+                        anyhow::bail!("No entry file specified and no default entry file (main from package.json/kumo.json, index.ts, or src/index.ts) was found. Usage: kumo ts exec <file.ts> [args...]");
+                    }
+                } else {
+                    args.clone()
+                };
+
                 let polyfill_url = crate::common::ensure_kumo_polyfills()?;
                 let current_exe = std::env::current_exe()?;
 
                 let mut cmd = std::process::Command::new("node");
                 cmd.env("KUMO_BIN", current_exe);
                 cmd.arg("--import").arg(format!("file://{}", polyfill_url));
-                cmd.args(args);
+                cmd.args(exec_args);
 
                 #[cfg(windows)]
                 {
@@ -136,6 +144,33 @@ impl super::Command for TsCommand {
             }
         }
     }
+}
+
+fn resolve_exec_entry_file(current_dir: &std::path::Path) -> Option<String> {
+    for config_name in &["kumo.json", "package.json"] {
+        let config_path = current_dir.join(config_name);
+        if config_path.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&config_path) {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(main_val) = json.get("main").and_then(|m| m.as_str()) {
+                        let main_path = current_dir.join(main_val);
+                        if main_path.is_file() {
+                            return Some(main_val.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if current_dir.join("index.ts").is_file() {
+        return Some("index.ts".to_string());
+    }
+    if current_dir.join("src/index.ts").is_file() {
+        return Some("src/index.ts".to_string());
+    }
+
+    None
 }
 
 fn transpile_code(source: &str, filename: &str) -> std::result::Result<String, String> {
@@ -602,6 +637,48 @@ mod tests {
         assert!(bundle_code.contains("\"__entry__\""));
         assert!(bundle_code.contains("const { foo } = __kumo_require__(\"./lib\");"));
         assert!(bundle_code.contains("const foo = 42;"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_resolve_exec_entry_file_fallback() {
+        let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let temp_dir = std::env::temp_dir().join(format!("kumo_test_exec_{}", timestamp));
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        // 1. Empty dir: should return None
+        assert_eq!(resolve_exec_entry_file(&temp_dir), None);
+
+        // 2. Src/index.ts exists: should return Some("src/index.ts")
+        let src_dir = temp_dir.join("src");
+        let _ = std::fs::create_dir_all(&src_dir);
+        let src_index = src_dir.join("index.ts");
+        std::fs::write(&src_index, "console.log('src/index.ts');").unwrap();
+        assert_eq!(resolve_exec_entry_file(&temp_dir), Some("src/index.ts".to_string()));
+
+        // 3. Index.ts exists: should prefer index.ts over src/index.ts
+        let index_ts = temp_dir.join("index.ts");
+        std::fs::write(&index_ts, "console.log('index.ts');").unwrap();
+        assert_eq!(resolve_exec_entry_file(&temp_dir), Some("index.ts".to_string()));
+
+        // 4. Package.json exists with main field pointing to non-existing file: should still fallback to index.ts
+        let pkg_json = temp_dir.join("package.json");
+        std::fs::write(&pkg_json, r#"{"main": "nonexistent.ts"}"#).unwrap();
+        assert_eq!(resolve_exec_entry_file(&temp_dir), Some("index.ts".to_string()));
+
+        // 5. Package.json exists with main field pointing to an existing file: should prefer package.json main field
+        let main_ts = temp_dir.join("main.ts");
+        std::fs::write(&main_ts, "console.log('main.ts');").unwrap();
+        std::fs::write(&pkg_json, r#"{"main": "main.ts"}"#).unwrap();
+        assert_eq!(resolve_exec_entry_file(&temp_dir), Some("main.ts".to_string()));
+
+        // 6. Kumo.json exists and overrides package.json
+        let kumo_json = temp_dir.join("kumo.json");
+        let kumo_main = temp_dir.join("kumo_main.ts");
+        std::fs::write(&kumo_main, "console.log('kumo_main.ts');").unwrap();
+        std::fs::write(&kumo_json, r#"{"main": "kumo_main.ts"}"#).unwrap();
+        assert_eq!(resolve_exec_entry_file(&temp_dir), Some("kumo_main.ts".to_string()));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
