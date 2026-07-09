@@ -2,15 +2,27 @@
 
 Kumo provides an official Docker image for running Node.js projects with Kumo as their package manager inside containers.
 
+The official Kumo Docker image is minimal and **does not bundle Node.js** by default. Instead, it is based on `debian:stable-slim` and includes Kumo's native runtime manager, allowing you to install and switch to any Node.js version directly in your own image layers.
+
+---
+
 ## Quick Start
 
 Create a `Dockerfile` in your project:
 
 ```dockerfile
 FROM ghcr.io/jmaxdev/kumo
+
+# 1. Install the Node.js version you need (adds it to PATH automatically)
+RUN kumo runtime use 22
+
+# 2. Setup your application
 WORKDIR /app
-COPY . .
+COPY package.json kumo.lock ./
 RUN kumo install
+
+COPY . .
+# run your start script
 CMD ["kumo", "start"]
 ```
 
@@ -31,61 +43,61 @@ docker run -p 3000:3000 my-app
 | `next` | Latest pre-release (alpha, beta, rc) |
 | `x.y.z` | Specific version (e.g. `0.3.3`) |
 | `x.y` | Latest patch for a minor version (e.g. `0.3`) |
-| `dev` | Development builds from manual workflow triggers |
 
 ```dockerfile
 # Pin to a specific version
 FROM ghcr.io/jmaxdev/kumo:0.3.3
-
-# Use latest pre-release
-FROM ghcr.io/jmaxdev/kumo:next
+RUN kumo runtime use 22
 ```
 
 ---
 
 ## What's Included
 
-The image is based on `node:22-slim` and includes:
-- **Node.js 22** (LTS)
+The official Kumo image includes:
+- **`debian:stable-slim`** base image (aligned with the GLIBC compile target)
 - **`kumo`** binary in PATH
 - **`kx`** binary in PATH
 - Pre-configured `KUMO_HOME` at `/root/.kumo`
+- Exposed Kumo bin directory in PATH (`/root/.kumo/bin`), making Node.js runtimes active for subsequent image layers.
 - Exposed port **3000** (default for `Kumo.serve()`)
 
 ---
 
 ## Production Multi-Stage Example
 
-For optimized production images, use a multi-stage build to keep only the installed dependencies:
+For optimized production images, you can use a multi-stage build:
 
 ```dockerfile
-# Stage 1: Install dependencies
+# Stage 1: Install dependencies and Node.js
 FROM ghcr.io/jmaxdev/kumo AS deps
+RUN kumo runtime use 22
 WORKDIR /app
 COPY package.json kumo.lock ./
 RUN kumo install
 
 # Stage 2: Build application
 FROM ghcr.io/jmaxdev/kumo AS builder
+RUN kumo runtime use 22
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN kumo ts build
 
-# Stage 3: Production runtime
+# Stage 3: Production runtime (Clean & minimal)
 FROM node:22-slim AS runtime
 WORKDIR /app
 COPY --from=builder /app/dist ./dist
 COPY --from=deps /app/node_modules ./node_modules
 EXPOSE 3000
-CMD ["node", "dist/index.js"]
+CMD ["kumo", "start"]
 ```
 
 ---
 
 ## Docker Compose
 
-For local development, use `docker-compose`:
+For local development, you can mount the global store to persist cached packages:
 
 ```yaml
 services:
@@ -95,19 +107,11 @@ services:
       - "3000:3000"
     volumes:
       - .:/app
-      - kumo-store:/root/.kumo  # Persist global store
-    command: ["start"]
+      - kumo-store:/root/.kumo  # Persist global store and installed runtimes
+    command: ["kumo", "start"]
 
 volumes:
   kumo-store:
-```
-
-```bash
-# Install dependencies
-docker compose run --rm app install
-
-# Start the application
-docker compose up
 ```
 
 ---
@@ -120,39 +124,10 @@ docker compose up
 
 ---
 
-## Caching Strategies
-
-### Layer Caching
-
-Copy `package.json` and `kumo.lock` before source code to maximize Docker layer caching:
-
-```dockerfile
-FROM ghcr.io/jmaxdev/kumo
-WORKDIR /app
-
-# Dependencies layer (cached unless lock changes)
-COPY package.json kumo.lock ./
-RUN kumo install
-
-# Application layer
-COPY . .
-CMD ["kumo", "start"]
-```
-
-### Volume Mount for CI
-
-Mount the Kumo store as a volume to share cached packages across builds:
-
-```bash
-docker run -v kumo-store:/root/.kumo ghcr.io/jmaxdev/kumo install
-```
-
----
-
 ## Architecture Support
 
 The official image is built for:
 - `linux/amd64` (x86_64)
 - `linux/arm64` (Apple Silicon, AWS Graviton)
 
-Docker will automatically pull the correct image for your platform.
+Docker will automatically pull the correct image for your host platform.
