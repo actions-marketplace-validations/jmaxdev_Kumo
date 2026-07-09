@@ -39,8 +39,10 @@ jobs:
             prerelease="${{ github.event.inputs.prerelease }}"
           fi
           major="${version%%.*}"
+          minor="${version%.*}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "major=$major" >> "$GITHUB_OUTPUT"
+          echo "minor=$minor" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       - name: Compute image tags
@@ -50,11 +52,12 @@ jobs:
           image="ghcr.io/${{ github.repository_owner }}/kumo"
           version="${{ steps.meta.outputs.version }}"
           major="${{ steps.meta.outputs.major }}"
+          minor="${{ steps.meta.outputs.minor }}"
           prerelease="${{ steps.meta.outputs.prerelease }}"
           
           tags="${image}:${version}"
           if [ "$prerelease" != "true" ]; then
-            tags="${tags},${image}:${major},${image}:latest"
+            tags="${tags},${image}:${minor},${image}:${major},${image}:latest"
           else
             tags="${tags},${image}:next"
           fi
