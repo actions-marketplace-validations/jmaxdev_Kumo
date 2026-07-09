@@ -11,7 +11,7 @@
 # ============================================================
 
 # ── Stage 1: Build Kumo from source ─────────────────────────
-FROM rust:slim AS builder
+FROM rust:slim-bookworm AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
