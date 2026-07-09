@@ -10,9 +10,17 @@ INSTALL_DIR="$HOME/.kumo/bin"
 REPO_URL="https://github.com/jmaxdev/Kumo/releases/latest/download"
 
 if [ "$OS" == "darwin" ]; then
-    FILENAME="kumo-macos.tar.gz"
+    if [ "$ARCH" == "x86_64" ]; then
+        FILENAME="kumo-macos.tar.gz"
+    else
+        FILENAME="kumo-macos-arm64.tar.gz"
+    fi
 else
-    FILENAME="kumo-linux.tar.gz"
+    if [ "$ARCH" == "aarch64" ] || [ "$ARCH" == "arm64" ]; then
+        FILENAME="kumo-linux-arm64.tar.gz"
+    else
+        FILENAME="kumo-linux-amd64.tar.gz"
+    fi
 fi
 
 mkdir -p "$INSTALL_DIR"

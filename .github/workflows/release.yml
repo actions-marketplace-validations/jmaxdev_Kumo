@@ -36,27 +36,37 @@ jobs:
           echo "version=v$NEW_VERSION" >> $GITHUB_OUTPUT
 
   build:
-    name: Build for ${{ matrix.os }}
+    name: Build for ${{ matrix.job_name }}
     runs-on: ${{ matrix.os }}
     needs: get-version
     strategy:
       matrix:
-        os: [
-          windows-2022,
-          ubuntu-22.04,
-          macos-14
-        ]
         include:
           - os: windows-2022
-            artifact_name: kumo-windows.zip
+            job_name: Windows x64
+            target: x86_64-pc-windows-msvc
+            artifact_name: kumo-windows-amd64.zip
             asset_name: kumo.exe
             kx_name: kx.exe
+
           - os: ubuntu-22.04
-            artifact_name: kumo-linux.tar.gz
+            job_name: Linux x64 (amd64)
+            target: x86_64-unknown-linux-gnu
+            artifact_name: kumo-linux-amd64.tar.gz
             asset_name: kumo
             kx_name: kx
+
+          - os: ubuntu-22.04
+            job_name: Linux arm64 (aarch64)
+            target: aarch64-unknown-linux-gnu
+            artifact_name: kumo-linux-arm64.tar.gz
+            asset_name: kumo
+            kx_name: kx
+
           - os: macos-14
-            artifact_name: kumo-macos.tar.gz
+            job_name: macOS arm64
+            target: aarch64-apple-darwin
+            artifact_name: kumo-macos-arm64.tar.gz
             asset_name: kumo
             kx_name: kx
 
@@ -69,44 +79,64 @@ jobs:
     - name: Rust Cache
       uses: Swatinem/rust-cache@v2
 
+    - name: Setup cross-compilation for ARM64 Linux
+      if: matrix.target == 'aarch64-unknown-linux-gnu'
+      run: |
+        rustup target add aarch64-unknown-linux-gnu
+        sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
     - name: Build Kumo
-      run: cargo build --release
+      run: cargo build --release --target ${{ matrix.target }}
       env:
         CARGO_INCREMENTAL: 0
         CARGO_TERM_COLOR: always
+        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 
     - name: Prepare Artifacts (Windows)
       if: matrix.os == 'windows-2022'
       run: |
         mkdir bin
-        cp target/release/kumo.exe bin/
-        cp target/release/kx.exe bin/
+        cp target/${{ matrix.target }}/release/kumo.exe bin/
+        cp target/${{ matrix.target }}/release/kx.exe bin/
         7z a ${{ matrix.artifact_name }} ./bin/*
+        cp ${{ matrix.artifact_name }} kumo-windows.zip
+      shell: bash
 
     - name: Prepare Artifacts (Unix)
       if: matrix.os != 'windows-2022'
       run: |
         mkdir bin
-        cp target/release/kumo bin/
-        cp target/release/kx bin/
+        cp target/${{ matrix.target }}/release/kumo bin/
+        cp target/${{ matrix.target }}/release/kx bin/
         tar -czf ${{ matrix.artifact_name }} -C bin .
+        if [ "${{ matrix.target }}" = "x86_64-unknown-linux-gnu" ]; then
+          cp ${{ matrix.artifact_name }} kumo-linux.tar.gz
+        elif [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
+          cp ${{ matrix.artifact_name }} kumo-macos.tar.gz
+        fi
+      shell: bash
 
     - name: Generate Checksums
       run: |
         if [ "$RUNNER_OS" = "Windows" ]; then
           certutil -hashfile ${{ matrix.artifact_name }} SHA256 > ${{ matrix.artifact_name }}.sha256
+          certutil -hashfile kumo-windows.zip SHA256 > kumo-windows.zip.sha256
         else
           shasum -a 256 ${{ matrix.artifact_name }} > ${{ matrix.artifact_name }}.sha256
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-gnu" ]; then
+            shasum -a 256 kumo-linux.tar.gz > kumo-linux.tar.gz.sha256
+          elif [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
+            shasum -a 256 kumo-macos.tar.gz > kumo-macos.tar.gz.sha256
+          fi
         fi
       shell: bash
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v7
       with:
-        name: ${{ matrix.os }}-build
+        name: ${{ matrix.target }}-build
         path: |
-          ${{ matrix.artifact_name }}
-          ${{ matrix.artifact_name }}.sha256
+          kumo-*
 
   release:
     name: Create GitHub Release
@@ -123,62 +153,24 @@ jobs:
         with:
           tag_name: ${{ needs.get-version.outputs.new_tag }}
           files: |
-            windows-2022-build/kumo-windows.zip
-            windows-2022-build/kumo-windows.zip.sha256
-            ubuntu-22.04-build/kumo-linux.tar.gz
-            ubuntu-22.04-build/kumo-linux.tar.gz.sha256
-            macos-14-build/kumo-macos.tar.gz
-            macos-14-build/kumo-macos.tar.gz.sha256
+            x86_64-pc-windows-msvc-build/kumo-windows-amd64.zip
+            x86_64-pc-windows-msvc-build/kumo-windows-amd64.zip.sha256
+            x86_64-pc-windows-msvc-build/kumo-windows.zip
+            x86_64-pc-windows-msvc-build/kumo-windows.zip.sha256
+            x86_64-unknown-linux-gnu-build/kumo-linux-amd64.tar.gz
+            x86_64-unknown-linux-gnu-build/kumo-linux-amd64.tar.gz.sha256
+            x86_64-unknown-linux-gnu-build/kumo-linux.tar.gz
+            x86_64-unknown-linux-gnu-build/kumo-linux.tar.gz.sha256
+            aarch64-unknown-linux-gnu-build/kumo-linux-arm64.tar.gz
+            aarch64-unknown-linux-gnu-build/kumo-linux-arm64.tar.gz.sha256
+            aarch64-apple-darwin-build/kumo-macos-arm64.tar.gz
+            aarch64-apple-darwin-build/kumo-macos-arm64.tar.gz.sha256
+            aarch64-apple-darwin-build/kumo-macos.tar.gz
+            aarch64-apple-darwin-build/kumo-macos.tar.gz.sha256
           generate_release_notes: true
           prerelease: ${{ contains(needs.get-version.outputs.new_tag, '-') }}
+          draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  docker:
-    name: Build & Push Docker Image
-    needs: [release, get-version]
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Set up QEMU (multi-platform)
-        uses: docker/setup-qemu-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/jmaxdev/kumo
-          tags: |
-            type=semver,pattern={{version}},value=${{ needs.get-version.outputs.new_tag }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.get-version.outputs.new_tag }}
-            type=semver,pattern={{major}},value=${{ needs.get-version.outputs.new_tag }}
-            type=raw,value=latest,enable=${{ !contains(needs.get-version.outputs.new_tag, '-') }}
-            type=raw,value=next,enable=${{ contains(needs.get-version.outputs.new_tag, '-') }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 

@@ -104,19 +104,34 @@ pub async fn execute(include_pre: bool, target_version: Option<String>) -> Resul
     );
 
     #[cfg(target_os = "windows")]
-    let asset_name = "kumo-windows.zip";
+    let (asset_name, fallback_name) = if cfg!(target_arch = "aarch64") {
+        ("kumo-windows-arm64.zip", "kumo-windows.zip")
+    } else {
+        ("kumo-windows-amd64.zip", "kumo-windows.zip")
+    };
     #[cfg(target_os = "macos")]
-    let asset_name = "kumo-macos.tar.gz";
+    let (asset_name, fallback_name) = if cfg!(target_arch = "x86_64") {
+        ("kumo-macos-amd64.tar.gz", "kumo-macos.tar.gz")
+    } else {
+        ("kumo-macos-arm64.tar.gz", "kumo-macos.tar.gz")
+    };
     #[cfg(target_os = "linux")]
-    let asset_name = "kumo-linux.tar.gz";
+    let (asset_name, fallback_name) = if cfg!(target_arch = "aarch64") {
+        ("kumo-linux-arm64.tar.gz", "kumo-linux.tar.gz")
+    } else {
+        ("kumo-linux-amd64.tar.gz", "kumo-linux.tar.gz")
+    };
 
     let assets = release["assets"]
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("No assets found in release"))?;
     let asset = assets
         .iter()
-        .find(|a| a["name"].as_str().unwrap_or("").contains(asset_name))
-        .ok_or_else(|| anyhow::anyhow!("Could not find asset for current OS: {}", asset_name))?;
+        .find(|a| {
+            let name = a["name"].as_str().unwrap_or("");
+            name.contains(asset_name) || name.contains(fallback_name)
+        })
+        .ok_or_else(|| anyhow::anyhow!("Could not find asset for current OS/Arch: {} or {}", asset_name, fallback_name))?;
 
     let download_url = asset["browser_download_url"]
         .as_str()
