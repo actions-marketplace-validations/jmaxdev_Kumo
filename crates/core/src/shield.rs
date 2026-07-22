@@ -19,7 +19,7 @@ impl ShieldManager {
             return true;
         }
         if let Ok(content) = fs::read_to_string(&self.state_path) {
-            return content.trim() == "off";
+            return content.trim() != "off";
         }
         true
     }
