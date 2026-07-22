@@ -15,5 +15,5 @@ panic = "abort"     # Remove panic unwinding, smaller binary
 strip = true        # Automatically strip symbols
 
 [workspace.package] 
-version = "0.3.3-alpha.14" 
+version = "0.3.3-alpha.15" 
 edition = "2021"
