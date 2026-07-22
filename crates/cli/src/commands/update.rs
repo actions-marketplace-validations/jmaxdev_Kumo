@@ -93,7 +93,7 @@ pub async fn execute(include_pre: bool, target_version: Option<String>) -> Resul
         .ok_or_else(|| anyhow::anyhow!("Could not find version information in the release."))?;
     let latest_version = latest_tag.trim_start_matches('v');
 
-    if target_version.is_none() && latest_version == current_version {
+    if latest_version == current_version {
         println!("Kumo is already up to date (v{})!", current_version);
         return Ok(());
     }
