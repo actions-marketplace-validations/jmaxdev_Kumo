@@ -16,12 +16,12 @@ impl ShieldManager {
 
     pub fn is_active(&self) -> bool {
         if !self.state_path.exists() {
-            return false;
+            return true;
         }
         if let Ok(content) = fs::read_to_string(&self.state_path) {
-            return content.trim() == "on";
+            return content.trim() == "off";
         }
-        false
+        true
     }
 
     pub fn set_active(&self, active: bool) -> Result<()> {
