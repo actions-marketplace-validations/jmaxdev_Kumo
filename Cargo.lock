@@ -353,7 +353,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cli"
-version = "0.3.3-alpha.13"
+version = "0.3.3-alpha.15"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1439,7 +1439,7 @@ checksum = "35e770254dd7802184595b1d30da2a15cb72569e2aca2b177aef8d22eac8a693"
 
 [[package]]
 name = "kumo-core"
-version = "0.3.3-alpha.13"
+version = "0.3.3-alpha.15"
 dependencies = [
  "anyhow",
  "base64",
@@ -2518,7 +2518,7 @@ dependencies = [
 
 [[package]]
 name = "resolver"
-version = "0.3.3-alpha.13"
+version = "0.3.3-alpha.15"
 dependencies = [
  "anyhow",
  "dirs",
@@ -2709,7 +2709,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "security"
-version = "0.3.3-alpha.13"
+version = "0.3.3-alpha.15"
 dependencies = [
  "anyhow",
  "blake3",

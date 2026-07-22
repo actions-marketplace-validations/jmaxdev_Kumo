@@ -50,7 +50,7 @@ impl Resolver {
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
-        let mut registry_raw = kumo_core::config::DEFAULT_REGISTRY_KUMO_URL.to_string();
+        let mut registry_raw = kumo_core::config::DEFAULT_REGISTRY.to_string();
 
         if let Ok(env_reg) = std::env::var(kumo_core::config::ENV_VAR_KUMO_REGISTRY) {
             if !env_reg.trim().is_empty() {
@@ -89,7 +89,7 @@ impl Resolver {
             other if other.starts_with("http://") || other.starts_with("https://") => {
                 other.trim_end_matches('/').to_string()
             }
-            _ => kumo_core::config::DEFAULT_REGISTRY_KUMO_URL.to_string(),
+            _ => kumo_core::config::DEFAULT_REGISTRY_NPM_URL.to_string(),
         };
 
         Self {
