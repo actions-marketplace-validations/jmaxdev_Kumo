@@ -14,3 +14,6 @@ codegen-units = 1   # Better optimization, slower compile
 panic = "abort"     # Remove panic unwinding, smaller binary
 strip = true        # Automatically strip symbols
 
+[workspace.package] 
+version = "0.3.3-alpha.14" 
+edition = "2021"

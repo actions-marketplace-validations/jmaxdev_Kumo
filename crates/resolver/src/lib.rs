@@ -12,6 +12,33 @@ pub struct Resolver {
     registry_url: String,
 }
 
+fn parse_version_reqs(range: &str) -> Result<Vec<VersionReq>> {
+    range
+        .split("||")
+        .map(|r| {
+            let r_clean = r.trim();
+            let r_no_v = if r_clean.starts_with('v') && r_clean.chars().nth(1).map_or(false, |c| c.is_ascii_digit()) {
+                &r_clean[1..]
+            } else {
+                r_clean
+            };
+            let normalized = r_no_v
+                .replace(">= ", ">=")
+                .replace("<= ", "<=")
+                .replace("> ", ">")
+                .replace("< ", "<")
+                .replace("^ ", "^")
+                .replace("~ ", "~")
+                .replace("= ", "=")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(",");
+            VersionReq::parse(&normalized)
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| anyhow!("Invalid semver range '{}': {}", range, e))
+}
+
 impl Resolver {
     pub fn new() -> Self {
         let client = reqwest::Client::builder()
@@ -158,23 +185,7 @@ impl Resolver {
             } else if range == "latest" || range == "*" || range == "" {
                 response.dist_tags.get("latest").cloned()
             } else {
-                let parsed_reqs = range
-                    .split("||")
-                    .map(|r| {
-                        let normalized = r
-                            .trim()
-                            .replace(">= ", ">=")
-                            .replace("<= ", "<=")
-                            .replace("> ", ">")
-                            .replace("< ", "<")
-                            .split_whitespace()
-                            .collect::<Vec<_>>()
-                            .join(",");
-                        VersionReq::parse(&normalized)
-                    })
-                    .collect::<Result<Vec<_>, _>>();
-
-                match parsed_reqs {
+                match parse_version_reqs(range) {
                     Ok(reqs) => {
                         let mut versions: Vec<Version> = response
                             .versions
@@ -199,21 +210,7 @@ impl Resolver {
                 response = self.fetch_and_cache_metadata(name, &cache_path).await?;
                 from_cache = false;
             } else {
-                let reqs_res = range
-                    .split("||")
-                    .map(|r| {
-                        let normalized = r
-                            .trim()
-                            .replace(">= ", ">=")
-                            .replace("<= ", "<=")
-                            .replace("> ", ">")
-                            .replace("< ", "<")
-                            .split_whitespace()
-                            .collect::<Vec<_>>()
-                            .join(",");
-                        VersionReq::parse(&normalized)
-                    })
-                    .collect::<Result<Vec<_>, _>>();
+                let reqs_res = parse_version_reqs(range);
 
                 if reqs_res.is_err() {
                     anyhow::bail!("Invalid semver range: {}", range);
@@ -496,5 +493,23 @@ impl Resolver {
             name,
             last_err
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_version_reqs() {
+        let reqs = parse_version_reqs("^0.34.5").unwrap();
+        let v = Version::parse("0.34.5").unwrap();
+        assert!(reqs.iter().any(|r| r.matches(&v)));
+
+        let reqs_v = parse_version_reqs("v0.34.5").unwrap();
+        assert!(reqs_v.iter().any(|r| r.matches(&v)));
+
+        let reqs_space = parse_version_reqs("^ 0.34.5").unwrap();
+        assert!(reqs_space.iter().any(|r| r.matches(&v)));
     }
 }

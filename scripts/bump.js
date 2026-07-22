@@ -2,12 +2,12 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 
-const mainCratePath = path.join(__dirname, '..', 'crates', 'cli', 'Cargo.toml');
+const mainCratePath = path.join(__dirname, '..', 'Cargo.toml');
 const manifest = fs.readFileSync(mainCratePath, 'utf8');
 const versionMatch = manifest.match(/^version = "(.*)"/m);
 
 if (!versionMatch) {
-  console.error('Could not find version in crates/cli/Cargo.toml');
+  console.error('Could not find version in: ' + mainCratePath);
   process.exit(1);
 }
 
@@ -86,18 +86,10 @@ async function run() {
 
   console.log(`Bumping version: \x1b[33m${currentVersion}\x1b[0m -> \x1b[32m${newVersion}\x1b[0m`);
 
-  const cratesDir = path.join(__dirname, '..', 'crates');
-  const crates = fs.readdirSync(cratesDir);
-
-  crates.forEach(crate => {
-    const cargoPath = path.join(cratesDir, crate, 'Cargo.toml');
-    if (fs.existsSync(cargoPath)) {
-      console.log(`  Updating ${crate}...`);
-      let content = fs.readFileSync(cargoPath, 'utf8');
-      content = content.replace(/^version = ".*"/m, `version = "${newVersion}"`);
-      fs.writeFileSync(cargoPath, content);
-    }
-  });
+  console.log(`  Updating Cargo.toml...`);
+  let content = fs.readFileSync(mainCratePath, 'utf8');
+  content = content.replace(/^version = ".*"/m, `version = "${newVersion}"`);
+  fs.writeFileSync(mainCratePath, content);
 
   console.log('\x1b[32mVersion update complete!\x1b[0m');
 
