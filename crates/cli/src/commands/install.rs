@@ -388,7 +388,7 @@ pub async fn resolve_and_install(
                     .join(&deps_dir_name)
                     .join(&normalized_name);
                 if !scripts.is_empty() {
-                    let _ = run_install_scripts(&target_dir, scripts, security).await;
+                    let _ = run_install_scripts(name, &target_dir, scripts, security).await;
                 }
             }
         }
@@ -495,6 +495,7 @@ async fn create_shim(
 }
 
 async fn run_install_scripts(
+    pkg_name: &str,
     pkg_dir: &std::path::Path,
     scripts: &HashMap<String, String>,
     security_engine: &security::SecurityEngine,
@@ -525,14 +526,25 @@ async fn run_install_scripts(
             }
 
             if !all_warnings.is_empty() {
-                eprintln!(
-                    "🚨 \x1b[31mSecurity Violation:\x1b[0m Script '{}' in package {:?} blocked by Static Analysis!",
-                    script_name, pkg_dir.file_name().unwrap_or_default()
-                );
-                for w in all_warnings {
-                    eprintln!("  - {}", w);
+                let is_trusted = security_engine.policy.trusted_packages.contains(pkg_name);
+                if is_trusted {
+                    eprintln!(
+                        "⚠️ \x1b[33mStatic Analysis Warning:\x1b[0m Script '{}' in trusted package '{}' flagged warnings, proceeding because it is in trusted_packages:",
+                        script_name, pkg_name
+                    );
+                    for w in &all_warnings {
+                        eprintln!("  - {}", w);
+                    }
+                } else {
+                    eprintln!(
+                        "🚨 \x1b[31mSecurity Violation:\x1b[0m Script '{}' in package '{}' blocked by Static Analysis!",
+                        script_name, pkg_name
+                    );
+                    for w in &all_warnings {
+                        eprintln!("  - {}", w);
+                    }
+                    continue;
                 }
-                continue;
             }
 
             let mut command = security::sandbox::SandboxRunner::create_command(pkg_dir, script_content, false, proxy_port);
