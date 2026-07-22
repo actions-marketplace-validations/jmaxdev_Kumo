@@ -34,12 +34,17 @@ async fn main() -> Result<()> {
 
     let (store, security, resolver) = common::init_components().await?;
 
-    let kumo_json_path = std::env::current_dir()?.join("kumo.json");
-    let pkg_json_path = std::env::current_dir()?.join("package.json");
-    let config_path = if kumo_json_path.exists() {
-        Some(kumo_json_path)
-    } else if pkg_json_path.exists() {
-        Some(pkg_json_path)
+    let cwd = std::env::current_dir().ok();
+    let kumo_json_path = cwd.as_ref().map(|p| p.join("kumo.json"));
+    let pkg_json_path = cwd.as_ref().map(|p| p.join("package.json"));
+    let kumo_config_path = cwd.as_ref().map(|p| p.join(kumo_core::config::KUMO_CONFIG_JSON));
+
+    let config_path = if kumo_json_path.as_ref().map_or(false, |p| p.exists()) {
+        kumo_json_path
+    } else if pkg_json_path.as_ref().map_or(false, |p| p.exists()) {
+        pkg_json_path
+    } else if kumo_config_path.as_ref().map_or(false, |p| p.exists()) {
+        kumo_config_path
     } else {
         None
     };

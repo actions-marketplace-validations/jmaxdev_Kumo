@@ -16,7 +16,7 @@ pub struct InstallCommand {
 #[async_trait::async_trait(?Send)]
 impl super::Command for InstallCommand {
     async fn run(&self, ctx: &super::CommandContext) -> anyhow::Result<()> {
-        let config_path = ctx.config_path.clone().ok_or_else(|| anyhow::anyhow!("Neither kumo.json nor package.json found in current directory"))?;
+        let config_path = ctx.config_path.clone().ok_or_else(|| anyhow::anyhow!("Neither kumo.json, package.json nor kumo.config.json found in current directory"))?;
         execute(&ctx.store, &ctx.resolver, &ctx.security, self.log, config_path).await
     }
 }

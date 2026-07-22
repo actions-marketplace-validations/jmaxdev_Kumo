@@ -53,14 +53,18 @@ pub async fn execute(security: &SecurityEngine) -> Result<()> {
         fixable.len()
     );
 
-    let kumo_json_path = std::env::current_dir()?.join("kumo.json");
-    let pkg_json_path = std::env::current_dir()?.join("package.json");
+    let cwd = std::env::current_dir()?;
+    let kumo_json_path = cwd.join("kumo.json");
+    let pkg_json_path = cwd.join("package.json");
+    let kumo_config_path = cwd.join(kumo_core::config::KUMO_CONFIG_JSON);
     let config_path = if kumo_json_path.exists() {
         kumo_json_path
     } else if pkg_json_path.exists() {
         pkg_json_path
+    } else if kumo_config_path.exists() {
+        kumo_config_path
     } else {
-        anyhow::bail!("Neither kumo.json nor package.json found in current directory");
+        anyhow::bail!("Neither kumo.json, package.json nor kumo.config.json found in current directory");
     };
 
     let mut config_content: serde_json::Value =

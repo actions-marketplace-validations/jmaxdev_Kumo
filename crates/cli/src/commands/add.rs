@@ -39,7 +39,7 @@ pub async fn execute(
         crate::commands::install::install_global(store, resolver, security, pkg_name, version_req).await?;
     } else {
         let config_path = config_path.ok_or_else(|| {
-            anyhow::anyhow!("Neither kumo.json nor package.json found in current directory")
+            anyhow::anyhow!("Neither kumo.json, package.json nor kumo.config.json found in current directory")
         })?;
 
         println!("Resolving package {}@{}...", pkg_name, version_req);

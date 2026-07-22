@@ -26,7 +26,7 @@ pub async fn execute(
     config_path: Option<std::path::PathBuf>,
 ) -> Result<()> {
     let config_path = config_path.ok_or_else(|| {
-        anyhow::anyhow!("Neither kumo.json nor package.json found in current directory")
+        anyhow::anyhow!("Neither kumo.json, package.json nor kumo.config.json found in current directory")
     })?;
     println!("Removing {}...", name);
     let mut config_content: serde_json::Value =
