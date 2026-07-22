@@ -32,7 +32,7 @@ jobs:
       - name: Get current version
         id: get-version
         run: |
-          NEW_VERSION=$(grep -m 1 '^version = ' crates/cli/Cargo.toml | cut -d '"' -f 2)
+          NEW_VERSION=$(grep -m 1 '^version = ' Cargo.toml | cut -d '"' -f 2)
           echo "version=v$NEW_VERSION" >> $GITHUB_OUTPUT
 
   build:
