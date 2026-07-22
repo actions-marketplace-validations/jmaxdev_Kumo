@@ -17,6 +17,8 @@ pub const METADATA_DIR_NAME: &str = "metadata";
 pub const OBJECTS_DIR_NAME: &str = "objects";
 pub const SHIELD_STATE_FILE: &str = ".shield_state";
 pub const CREDENTIALS_FILE: &str = "credentials.json";
+pub const CONFIG_KEY_USE_NODE_MODULES: &str = "useNodeModules";
+pub const DEFAULT_USE_NODE_MODULES: bool = false;
 
 
 pub const GITHUB_RELEASES_LIST_URL: &str = "https://api.github.com/repos/jmaxdev/kumo/releases";
@@ -51,7 +53,6 @@ pub const DEFAULT_ALLOWED_DOMAINS: &[&str] = &[
     "objects.githubusercontent.com",
     "registry.npmjs.org",
     "nodejs.org",
-    "localhost",
 ];
 
 

@@ -69,14 +69,14 @@ pub async fn init_components() -> Result<(Store, SecurityEngine, Resolver)> {
 }
 
 pub fn get_deps_dir() -> String {
-    let mut use_node_modules = false;
+    let mut use_node_modules = kumo_core::config::DEFAULT_USE_NODE_MODULES;
     let mut local_set = false;
 
     if let Ok(cwd) = std::env::current_dir() {
         let local_path = cwd.join(kumo_core::config::KUMO_CONFIG_JSON);
         if let Ok(content) = std::fs::read_to_string(&local_path) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(b) = v["useNodeModules"].as_bool() {
+                if let Some(b) = v[kumo_core::config::CONFIG_KEY_USE_NODE_MODULES].as_bool() {
                     use_node_modules = b;
                     local_set = true;
                 }
@@ -89,7 +89,9 @@ pub fn get_deps_dir() -> String {
             let global_path = home.join(kumo_core::config::KUMO_DIR_NAME).join(kumo_core::config::KUMO_CONFIG_JSON);
             if let Ok(content) = std::fs::read_to_string(global_path) {
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-                    use_node_modules = v["useNodeModules"].as_bool().unwrap_or(false);
+                    use_node_modules = v[kumo_core::config::CONFIG_KEY_USE_NODE_MODULES]
+                        .as_bool()
+                        .unwrap_or(kumo_core::config::DEFAULT_USE_NODE_MODULES);
                 }
             }
         }

@@ -47,6 +47,8 @@ pub struct Policy {
     pub allowed_domains: HashSet<String>,
     #[serde(rename = "AllowedImportHost", alias = "allowedImportHosts", alias = "AllowedImportHosts", alias = "allowed_import_hosts")]
     pub allowed_import_hosts: HashSet<String>,
+    #[serde(rename = "useNodeModules", alias = "use_node_modules")]
+    pub use_node_modules: bool,
     pub registry: String,
 }
 
@@ -75,6 +77,7 @@ impl Default for Policy {
                 .iter()
                 .map(|&s| s.to_string())
                 .collect(),
+            use_node_modules: kumo_core::config::DEFAULT_USE_NODE_MODULES,
             registry: kumo_core::config::DEFAULT_REGISTRY.to_string(),
         }
     }
