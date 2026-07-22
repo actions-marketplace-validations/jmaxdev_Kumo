@@ -95,16 +95,42 @@ jobs:
     - name: Prepare Artifacts (Windows)
       if: matrix.os == 'windows-2022'
       run: |
+        $passStr = [System.Guid]::NewGuid().ToString("N")
+        $secPass = ConvertTo-SecureString -String $passStr -Force -AsPlainText
+
+        $cert = New-SelfSignedCertificate `
+          -Type CodeSigningCert `
+          -Subject "CN=Kumo Package Manager, O=JMaxDev, OU=Kumo Security" `
+          -FriendlyName "Kumo Package Manager Code Signing" `
+          -NotAfter (Get-Date).AddYears(10) `
+          -CertStoreLocation Cert:\CurrentUser\My
+
+        $certPath = "$env:TEMP\kumo_$([System.Guid]::NewGuid().ToString('N')).pfx"
+        Export-PfxCertificate -Cert $cert -FilePath $certPath -Password $secPass | Out-Null
+
+        $signtool = (Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -First 1).FullName
+        if ($signtool) {
+          & $signtool sign /f $certPath /p $passStr /d "Kumo Package Manager" /du "https://github.com/jmaxdev/kumo" /tr http://timestamp.digicert.com /td sha256 /fd sha256 target/${{ matrix.target }}/release/kumo.exe
+          & $signtool sign /f $certPath /p $passStr /d "Kumo Executable Runner" /du "https://github.com/jmaxdev/kumo" /tr http://timestamp.digicert.com /td sha256 /fd sha256 target/${{ matrix.target }}/release/kx.exe
+        }
+        Remove-Item $certPath -ErrorAction SilentlyContinue
+
         mkdir bin
         cp target/${{ matrix.target }}/release/kumo.exe bin/
         cp target/${{ matrix.target }}/release/kx.exe bin/
         7z a ${{ matrix.artifact_name }} ./bin/*
         cp ${{ matrix.artifact_name }} kumo-windows.zip
-      shell: bash
+      shell: powershell
 
     - name: Prepare Artifacts (Unix)
       if: matrix.os != 'windows-2022'
       run: |
+        if [[ "${{ matrix.target }}" == *"apple-darwin"* ]]; then
+          echo "Applying Ad-Hoc Code Signing for macOS binaries..."
+          codesign --force -s - target/${{ matrix.target }}/release/kumo
+          codesign --force -s - target/${{ matrix.target }}/release/kx
+        fi
+
         mkdir bin
         cp target/${{ matrix.target }}/release/kumo bin/
         cp target/${{ matrix.target }}/release/kx bin/
