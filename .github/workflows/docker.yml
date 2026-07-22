@@ -38,6 +38,9 @@ jobs:
             version="${version#v}"
             prerelease="${{ github.event.inputs.prerelease }}"
           fi
+          if [ -z "${version}" ]; then
+            version=$(grep -m 1 'version = ' Cargo.toml | cut -d '"' -f 2 | tr -d '\r')
+          fi
           major="${version%%.*}"
           minor="${version%.*}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
