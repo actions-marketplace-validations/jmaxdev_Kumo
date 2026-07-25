@@ -404,7 +404,7 @@ kumo run build -- --production
 ### `auth [--registry <URL>]`
 Authenticates with the Kumo registry. It generates a local cryptographic key pair (`private_key.pem` and `public_key.pem` inside `~/.kumo/`) and initiates a browser-based interactive OIDC login session.
 
-- `--registry`: Custom registry URL to authenticate with. Note that this command is **strictly restricted** to the official Kumo registry (`https://kumo.unsetsoft.com`).
+- `--registry`: Custom registry URL to authenticate with. Note that this command is **strictly restricted** to the official Kumo registry (`https://kumo.jmaxdev.site`).
 
 ```bash
 kumo auth
@@ -414,7 +414,7 @@ kumo auth
 Publishes a package to the Kumo registry. It packs the target directory into a `.tgz` tarball, signs the version's BLAKE3 integrity checksum using your private key, and submits the package to the registry.
 
 - `[path]`: The path to the package directory to publish. Defaults to the current directory (`.`).
-- `--registry`: Custom registry URL to publish to. Note that this command is **strictly restricted** to the official Kumo registry (`https://kumo.unsetsoft.com`).
+- `--registry`: Custom registry URL to publish to. Note that this command is **strictly restricted** to the official Kumo registry (`https://kumo.jmaxdev.site`).
 
 ```bash
 kumo deps publish

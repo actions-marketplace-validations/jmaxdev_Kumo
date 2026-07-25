@@ -30,12 +30,12 @@ It implements a global **Content-Addressable Storage (CAS)** system powered by *
 
 ### Windows (PowerShell)
 ```powershell
-Invoke-WebRequest https://kumo.unsetsoft.com/install.ps1 -UseBasicParsing | Invoke-Expression
+Invoke-WebRequest https://kumo.jmaxdev.site/install.ps1 -UseBasicParsing | Invoke-Expression
 ```
 
 ### macOS & Linux (Bash/Zsh)
 ```bash
-curl -fsSL https://kumo.unsetsoft.com/install.sh | bash
+curl -fsSL https://kumo.jmaxdev.site/install.sh | bash
 ```
 
 ### Build from Source

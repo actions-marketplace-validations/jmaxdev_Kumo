@@ -15,7 +15,7 @@ To get started with Kumo, you can install it using our installation script:
 
 ```bash
 # On Unix-like systems
-curl -fsSL https://raw.githubusercontent.com/jmaxdev/Kumo/master/install.sh | sh
+curl -fsSL https://kumo.jmaxdev.site/install.sh | sh
 ```
 
 For more information on installation, see the main [README.md](../README.md).

@@ -3,7 +3,7 @@ pub const DEFAULT_USER_AGENT: &str = "kumo/pm";
 
 pub const DEFAULT_REGISTRY: &str = "npm";
 pub const DEFAULT_REGISTRY_NPM_URL: &str = "https://registry.npmjs.org";
-pub const DEFAULT_REGISTRY_KUMO_URL: &str = "https://kumo.unsetsoft.com";
+pub const DEFAULT_REGISTRY_KUMO_URL: &str = "https://kumo.jmaxdev.site";
 pub const ENV_VAR_KUMO_REGISTRY: &str = "KUMO_REGISTRY";
 
 
