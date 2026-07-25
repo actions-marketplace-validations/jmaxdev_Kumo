@@ -50,14 +50,38 @@ pub async fn link_package(
                     #[cfg(not(target_os = "windows"))]
                     {
                         if reflink_copy::reflink(&src_clone, &dest_clone).is_ok() {
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                if rel_path.contains("/bin/") || rel_path.starts_with("bin/") || rel_path.contains(".bin") || rel_path.ends_with(".sh") {
+                                    let _ = std::fs::set_permissions(&dest_clone, std::fs::Permissions::from_mode(0o755));
+                                }
+                            }
                             return Ok(());
                         }
                     }
                     if std::fs::hard_link(&src_clone, &dest_clone).is_ok() {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            if rel_path.contains("/bin/") || rel_path.starts_with("bin/") || rel_path.contains(".bin") || rel_path.ends_with(".sh") {
+                                let _ = std::fs::set_permissions(&dest_clone, std::fs::Permissions::from_mode(0o755));
+                            }
+                        }
                         return Ok(());
                     }
                     match std::fs::copy(&src_clone, &dest_clone) {
-                        Ok(_) => return Ok(()),
+                        Ok(_) => {
+                            #[cfg(unix)]
+                            {
+                                use std::os::unix::fs::PermissionsExt;
+                                if rel_path.contains("/bin/") || rel_path.starts_with("bin/") || rel_path.contains(".bin") || rel_path.ends_with(".sh") {
+                                    let _ = std::fs::set_permissions(&dest_clone, std::fs::Permissions::from_mode(0o755));
+                                }
+                            }
+                            return Ok(());
+                        },
+
                         Err(e) => {
                             attempts += 1;
                             if attempts >= 10 {
