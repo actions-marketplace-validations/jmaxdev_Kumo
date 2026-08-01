@@ -12,31 +12,202 @@ pub struct Resolver {
     registry_url: String,
 }
 
-fn parse_version_reqs(range: &str) -> Result<Vec<VersionReq>> {
-    range
+fn normalize_version_str(v: &str) -> String {
+    let clean = v.trim().trim_start_matches('v').trim_start_matches('=');
+    if clean.is_empty() || clean == "*" || clean.eq_ignore_ascii_case("x") {
+        return "*".to_string();
+    }
+
+    let (ver_part, extra) = match clean.find('-') {
+        Some(idx) => (&clean[..idx], &clean[idx..]),
+        None => (clean, ""),
+    };
+
+    let parts: Vec<&str> = ver_part.split('.').collect();
+    match parts.len() {
+        1 => {
+            if parts[0] == "*" || parts[0].eq_ignore_ascii_case("x") {
+                "*".to_string()
+            } else if parts[0].chars().all(|c| c.is_ascii_digit()) {
+                format!("{}.0.0{}", parts[0], extra)
+            } else {
+                clean.to_string()
+            }
+        }
+        2 => {
+            let p0 = if parts[0] == "*" || parts[0].eq_ignore_ascii_case("x") { "*" } else { parts[0] };
+            let p1 = if parts[1] == "*" || parts[1].eq_ignore_ascii_case("x") { "*" } else { parts[1] };
+            if p1 == "*" {
+                if p0 == "*" { "*".to_string() } else { format!("{}.*", p0) }
+            } else if p0.chars().all(|c| c.is_ascii_digit()) && p1.chars().all(|c| c.is_ascii_digit()) {
+                format!("{}.{}.0{}", p0, p1, extra)
+            } else {
+                clean.to_string()
+            }
+        }
+        _ => {
+            let mut normalized_parts = Vec::new();
+            for p in parts {
+                if p == "*" || p.eq_ignore_ascii_case("x") {
+                    normalized_parts.push("*");
+                } else {
+                    normalized_parts.push(p);
+                }
+            }
+            format!("{}{}", normalized_parts.join("."), extra)
+        }
+    }
+}
+
+fn normalize_hyphen_range(left: &str, right: &str) -> String {
+    let left_clean = left.trim().trim_start_matches('v').trim_start_matches('=');
+    let right_clean = right.trim().trim_start_matches('v').trim_start_matches('=');
+
+    let (l_ver, l_extra) = match left_clean.find('-') {
+        Some(idx) => (&left_clean[..idx], &left_clean[idx..]),
+        None => (left_clean, ""),
+    };
+    let l_parts: Vec<&str> = l_ver.split('.').collect();
+    let left_req = match l_parts.len() {
+        1 => {
+            if l_parts[0].chars().all(|c| c.is_ascii_digit()) {
+                format!(">={}.0.0{}", l_parts[0], l_extra)
+            } else {
+                format!(">={}{}", l_ver, l_extra)
+            }
+        }
+        2 => {
+            if l_parts[0].chars().all(|c| c.is_ascii_digit()) && l_parts[1].chars().all(|c| c.is_ascii_digit()) {
+                format!(">={}.{}.0{}", l_parts[0], l_parts[1], l_extra)
+            } else {
+                format!(">={}{}", l_ver, l_extra)
+            }
+        }
+        _ => format!(">={}{}", l_ver, l_extra),
+    };
+
+    let (r_ver, _r_extra) = match right_clean.find('-') {
+        Some(idx) => (&right_clean[..idx], &right_clean[idx..]),
+        None => (right_clean, ""),
+    };
+    let r_parts: Vec<&str> = r_ver.split('.').collect();
+    let right_req = match r_parts.len() {
+        1 => {
+            if let Ok(n) = r_parts[0].parse::<u64>() {
+                format!("<{}.0.0", n + 1)
+            } else {
+                format!("<={}.0.0", r_parts[0])
+            }
+        }
+        2 => {
+            if let (Ok(m), Ok(n)) = (r_parts[0].parse::<u64>(), r_parts[1].parse::<u64>()) {
+                format!("<{}.{}.0", m, n + 1)
+            } else {
+                format!("<={}.{}.0", r_parts[0], r_parts[1])
+            }
+        }
+        _ => format!("<={}", right_clean),
+    };
+
+    format!("{}, {}", left_req, right_req)
+}
+
+fn normalize_npm_semver_clause(r: &str) -> String {
+    let r = r.trim();
+    if r.contains(" - ") {
+        let parts: Vec<&str> = r.splitn(2, " - ").collect();
+        if parts.len() == 2 {
+            return normalize_hyphen_range(parts[0], parts[1]);
+        }
+    }
+
+    let preprocessed = r
+        .replace(">= ", ">=")
+        .replace("<= ", "<=")
+        .replace("> ", ">")
+        .replace("< ", "<")
+        .replace("^ ", "^")
+        .replace("~ ", "~")
+        .replace("= ", "=");
+
+    let tokens = preprocessed.split_whitespace();
+    let mut normalized_tokens = Vec::new();
+
+    for token in tokens {
+        let (op, v_raw) = if let Some(stripped) = token.strip_prefix(">=") {
+            (">=", stripped)
+        } else if let Some(stripped) = token.strip_prefix("<=") {
+            ("<=", stripped)
+        } else if let Some(stripped) = token.strip_prefix('>') {
+            (">", stripped)
+        } else if let Some(stripped) = token.strip_prefix('<') {
+            ("<", stripped)
+        } else if let Some(stripped) = token.strip_prefix('^') {
+            ("^", stripped)
+        } else if let Some(stripped) = token.strip_prefix('~') {
+            ("~", stripped)
+        } else if let Some(stripped) = token.strip_prefix('=') {
+            ("=", stripped)
+        } else {
+            ("", token)
+        };
+
+        let v_no_v = if v_raw.starts_with('v') && v_raw.chars().nth(1).map_or(false, |c| c.is_ascii_digit()) {
+            &v_raw[1..]
+        } else {
+            v_raw
+        };
+
+        if op.is_empty() {
+            if v_no_v == "*" || v_no_v.eq_ignore_ascii_case("x") || v_no_v.is_empty() {
+                normalized_tokens.push("*".to_string());
+            } else if v_no_v.ends_with(".x") || v_no_v.ends_with(".X") {
+                let stem = &v_no_v[..v_no_v.len() - 2];
+                normalized_tokens.push(format!("{}.*", stem));
+            } else {
+                normalized_tokens.push(v_no_v.to_string());
+            }
+        } else {
+            let (ver_part, _extra) = match v_no_v.find('-') {
+                Some(idx) => (&v_no_v[..idx], &v_no_v[idx..]),
+                None => (v_no_v, ""),
+            };
+            let parts: Vec<&str> = ver_part.split('.').collect();
+
+            if op == "<=" && parts.len() == 1 {
+                if let Ok(n) = parts[0].parse::<u64>() {
+                    normalized_tokens.push(format!("<{}.0.0", n + 1));
+                    continue;
+                }
+            } else if op == "<=" && parts.len() == 2 {
+                if let (Ok(m), Ok(n)) = (parts[0].parse::<u64>(), parts[1].parse::<u64>()) {
+                    normalized_tokens.push(format!("<{}.{}.0", m, n + 1));
+                    continue;
+                }
+            }
+
+            let norm_v = normalize_version_str(v_no_v);
+            normalized_tokens.push(format!("{}{}", op, norm_v));
+        }
+    }
+
+    normalized_tokens.join(",")
+}
+
+pub fn parse_version_reqs(range: &str) -> Result<Vec<VersionReq>> {
+    let range_clean = range.trim();
+    if range_clean.is_empty() || range_clean == "*" || range_clean.eq_ignore_ascii_case("x") || range_clean == "latest" {
+        return Ok(vec![VersionReq::STAR]);
+    }
+
+    range_clean
         .split("||")
         .map(|r| {
-            let r_clean = r.trim();
-            let r_no_v = if r_clean.starts_with('v') && r_clean.chars().nth(1).map_or(false, |c| c.is_ascii_digit()) {
-                &r_clean[1..]
-            } else {
-                r_clean
-            };
-            let normalized = r_no_v
-                .replace(">= ", ">=")
-                .replace("<= ", "<=")
-                .replace("> ", ">")
-                .replace("< ", "<")
-                .replace("^ ", "^")
-                .replace("~ ", "~")
-                .replace("= ", "=")
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(",");
+            let normalized = normalize_npm_semver_clause(r);
             VersionReq::parse(&normalized)
+                .map_err(|e| anyhow!("Invalid semver range '{}' (normalized: '{}'): {}", range, normalized, e))
         })
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| anyhow!("Invalid semver range '{}': {}", range, e))
 }
 
 impl Resolver {
@@ -511,5 +682,31 @@ mod tests {
 
         let reqs_space = parse_version_reqs("^ 0.34.5").unwrap();
         assert!(reqs_space.iter().any(|r| r.matches(&v)));
+
+        // Hyphen ranges (e.g. 1 - 3)
+        let reqs_hyphen = parse_version_reqs("1 - 3").unwrap();
+        let v1 = Version::parse("1.0.0").unwrap();
+        let v2 = Version::parse("2.5.0").unwrap();
+        let v3 = Version::parse("3.9.9").unwrap();
+        let v4 = Version::parse("4.0.0").unwrap();
+        assert!(reqs_hyphen.iter().any(|r| r.matches(&v1)));
+        assert!(reqs_hyphen.iter().any(|r| r.matches(&v2)));
+        assert!(reqs_hyphen.iter().any(|r| r.matches(&v3)));
+        assert!(!reqs_hyphen.iter().any(|r| r.matches(&v4)));
+
+        let reqs_hyphen_full = parse_version_reqs("1.0.0 - 2.0.0").unwrap();
+        assert!(reqs_hyphen_full.iter().any(|r| r.matches(&v1)));
+        assert!(reqs_hyphen_full.iter().any(|r| r.matches(&Version::parse("2.0.0").unwrap())));
+        assert!(!reqs_hyphen_full.iter().any(|r| r.matches(&Version::parse("2.0.1").unwrap())));
+
+        // Space separated bounds
+        let reqs_spaces = parse_version_reqs(">= 1.0.0 < 2.0.0").unwrap();
+        assert!(reqs_spaces.iter().any(|r| r.matches(&v1)));
+        assert!(!reqs_spaces.iter().any(|r| r.matches(&Version::parse("2.0.0").unwrap())));
+
+        // Wildcards & OR expressions
+        let reqs_or = parse_version_reqs("1 - 3 || ^4.0.0").unwrap();
+        assert!(reqs_or.iter().any(|r| r.matches(&v2)));
+        assert!(reqs_or.iter().any(|r| r.matches(&v4)));
     }
 }
