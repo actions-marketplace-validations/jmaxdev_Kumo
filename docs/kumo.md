@@ -46,9 +46,12 @@ kumo init -y
 Installs dependencies from `kumo.json` or `package.json`. It resolves the full dependency tree, generates a `kumo.lock` file, and links packages into the project's dependency directory (detected automatically as `node_modules` or `dependencies`).
 
 - `--log`: Shows detailed progress for each package (resolving, caching, downloading, linking).
+- `--frozen`: Enforces strict lockfile integrity in CI/CD. Aborts if `kumo.lock` is missing or out-of-sync with `package.json`.
+- `--offline`: Disables network calls and installs strictly from `~/.kumo/store`.
+- `--audit-level <level>`: Sets vulnerability threshold (`low`, `moderate`, `high`, `critical`) to fail installation if vulnerabilities exist.
 
 ```bash
-kumo install [--log]
+kumo install [--log] [--frozen] [--offline] [--audit-level <level>]
 kumo i
 ```
 
@@ -80,6 +83,27 @@ Scans project dependencies for known vulnerabilities using the Kumo Security Eng
 
 ```bash
 kumo scan
+```
+
+### `ci`
+Executes an all-in-one secure CI pipeline. By default, `kumo ci` enforces `--frozen` lockfile integrity, disables untrusted lifecycle scripts (`--ignore-scripts`), purges environment secrets from child sandboxes, and runs pre-installation security audits.
+
+- `--frozen`: Aborts if `kumo.lock` is missing or out of sync (default: true).
+- `--audit`: Runs security vulnerability audit (default: true).
+- `--ignore-scripts`: Disables untrusted lifecycle scripts (default: true).
+- `--format <sarif|json|text>`: Output format for audit report (default: `sarif`).
+- `--audit-level <level>`: Vulnerability severity threshold (`low`, `moderate`, `high`, `critical`).
+
+```bash
+kumo ci
+kumo ci --format=sarif > kumo-audit.sarif
+```
+
+### `fetch`
+Downloads and verifies all tarballs specified in `kumo.lock` into the global store `~/.kumo/store` without extracting them into `node_modules`. Ideal for Docker build cache layering.
+
+```bash
+kumo fetch
 ```
 
 ### `stats` (alias: `st`)

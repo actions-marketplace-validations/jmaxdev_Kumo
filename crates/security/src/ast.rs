@@ -57,6 +57,18 @@ pub fn analyze_script(script_content: &str) -> Result<Vec<String>> {
             "Uses PowerShell commands (possible malicious execution on Windows)",
             Regex::new(r"(?i)powershell\s+(?:-(?:enc|e|command|c)\s+|.*?Invoke-|.*?IEX\s)").unwrap(),
         ),
+        (
+            "Detects Base64 obfuscated string execution (atob/Buffer base64)",
+            Regex::new(r#"(?:atob|btoa)\s*\(|Buffer\s*\.\s*from\s*\(\s*['"`][A-Za-z0-9+/=]{20,}['"`]\s*,\s*['"`]base64['"`]\s*\)"#).unwrap(),
+        ),
+        (
+            "Detects raw IP outbound connections or reverse shell syntax",
+            Regex::new(r#"(?:/dev/tcp/|nc\s+-[e]|netcat\s+|connect\(\s*['"`]\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"#).unwrap(),
+        ),
+        (
+            "Explicit access to CI environment secret keys",
+            Regex::new(r"process\s*\.\s*env\s*\.\s*(?:GITHUB_TOKEN|AWS_SECRET_ACCESS_KEY|NPM_TOKEN|SECRET_|PRIVATE_KEY)").unwrap(),
+        ),
     ];
 
     for (message, re) in &patterns {

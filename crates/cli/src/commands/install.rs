@@ -11,12 +11,41 @@ use crate::common;
 pub struct InstallCommand {
     #[arg(long)]
     pub log: bool,
+
+    #[arg(long)]
+    pub frozen: bool,
+
+    #[arg(long)]
+    pub offline: bool,
+
+    #[arg(long, value_parser = ["low", "moderate", "high", "critical"])]
+    pub audit_level: Option<String>,
 }
 
 #[async_trait::async_trait(?Send)]
 impl super::Command for InstallCommand {
     async fn run(&self, ctx: &super::CommandContext) -> anyhow::Result<()> {
         let config_path = ctx.config_path.clone().ok_or_else(|| anyhow::anyhow!("Neither kumo.json, package.json nor kumo.config.json found in current directory"))?;
+
+        if self.frozen {
+            let lock_path = std::env::current_dir()?.join(kumo_core::config::KUMO_LOCK);
+            if !lock_path.exists() {
+                anyhow::bail!("--frozen: kumo.lock not found. Run 'kumo install' without --frozen first.");
+            }
+            let config_content = std::fs::read_to_string(&config_path)?;
+            let config_hash = blake3::hash(config_content.as_bytes()).to_string();
+            let lockfile: resolver::Lockfile = serde_yml::from_str(&std::fs::read_to_string(&lock_path)?)?;
+            if let Some(ref lf_hash) = lockfile.config_hash {
+                if *lf_hash != config_hash {
+                    anyhow::bail!("--frozen: kumo.lock is out of sync with {}. Run 'kumo install' without --frozen to update.", config_path.display());
+                }
+            }
+        }
+
+        if self.offline {
+            std::env::set_var("KUMO_OFFLINE", "1");
+        }
+
         execute(&ctx.store, &ctx.resolver, &ctx.security, self.log, config_path).await
     }
 }

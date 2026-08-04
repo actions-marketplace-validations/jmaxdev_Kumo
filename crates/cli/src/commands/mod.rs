@@ -146,4 +146,8 @@ register_commands!(
         about = "Manage Node.js runtime versions"
     )]
     runtime,
+    #[command(about = "Run a secure CI pipeline (frozen lockfile, audit, ignore-scripts)")]
+    ci,
+    #[command(about = "Download and verify all tarballs to the global store without extracting")]
+    fetch,
 );

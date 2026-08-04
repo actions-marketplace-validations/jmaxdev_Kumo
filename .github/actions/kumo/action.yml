@@ -1,0 +1,51 @@
+name: 'Setup Kumo'
+description: 'Fast, zero-trust package management and CI runner for Node.js projects'
+branding:
+  icon: 'box'
+  color: 'blue'
+
+inputs:
+  version:
+    description: 'Version of Kumo CLI to install (e.g. latest, v1.0.2)'
+    required: false
+    default: 'latest'
+  cache:
+    description: 'Enable automatic caching of ~/.kumo/store'
+    required: false
+    default: 'true'
+
+outputs:
+  cache-hit:
+    description: 'Whether the store cache was restored successfully'
+    value: ${{ steps.cache-store.outputs.cache-hit }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Cache Kumo Store
+      if: inputs.cache == 'true'
+      id: cache-store
+      uses: actions/cache@v4
+      with:
+        path: ~/.kumo/store
+        key: kumo-${{ runner.os }}-${{ hashFiles('**/kumo.lock', '**/package.json') }}
+        restore-keys: |
+          kumo-${{ runner.os }}-
+
+    - name: Download & Install Kumo Binary
+      shell: bash
+      run: |
+        OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+        ARCH="$(uname -m)"
+        if [ "$ARCH" = "x86_64" ]; then ARCH="amd64"; fi
+        if [ "$ARCH" = "aarch64" ]; then ARCH="arm64"; fi
+
+        URL="https://github.com/jmaxdev/Kumo/releases/download/${{ inputs.version }}/kumo-${OS}-${ARCH}"
+        if [ "${{ inputs.version }}" = "latest" ]; then
+          URL="https://github.com/jmaxdev/Kumo/releases/latest/download/kumo-${OS}-${ARCH}"
+        fi
+
+        mkdir -p ~/.kumo/bin
+        curl -sSL "$URL" -o ~/.kumo/bin/kumo || true
+        chmod +x ~/.kumo/bin/kumo || true
+        echo "$HOME/.kumo/bin" >> $GITHUB_PATH

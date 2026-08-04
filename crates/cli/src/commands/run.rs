@@ -2,6 +2,8 @@ use anyhow::Result;
 
 #[derive(clap::Args)]
 pub struct RunCommand {
+    #[arg(long)]
+    pub filter: Option<String>,
     pub script: Option<String>,
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub args: Vec<String>,
@@ -10,6 +12,9 @@ pub struct RunCommand {
 #[async_trait::async_trait(?Send)]
 impl super::Command for RunCommand {
     async fn run(&self, _ctx: &super::CommandContext) -> anyhow::Result<()> {
+        if let Some(ref filter_spec) = self.filter {
+            std::env::set_var("KUMO_FILTER", filter_spec);
+        }
         if let Some(s) = &self.script {
             execute(s, self.args.clone()).await
         } else {

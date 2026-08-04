@@ -647,33 +647,33 @@ mod tests {
         let temp_dir = std::env::temp_dir().join(format!("kumo_test_exec_{}", timestamp));
         let _ = std::fs::create_dir_all(&temp_dir);
 
-        // 1. Empty dir: should return None
+        // Empty dir: should return None
         assert_eq!(resolve_exec_entry_file(&temp_dir), None);
 
-        // 2. Src/index.ts exists: should return Some("src/index.ts")
+        // Src/index.ts exists: should return Some("src/index.ts")
         let src_dir = temp_dir.join("src");
         let _ = std::fs::create_dir_all(&src_dir);
         let src_index = src_dir.join("index.ts");
         std::fs::write(&src_index, "console.log('src/index.ts');").unwrap();
         assert_eq!(resolve_exec_entry_file(&temp_dir), Some("src/index.ts".to_string()));
 
-        // 3. Index.ts exists: should prefer index.ts over src/index.ts
+        // Index.ts exists: should prefer index.ts over src/index.ts
         let index_ts = temp_dir.join("index.ts");
         std::fs::write(&index_ts, "console.log('index.ts');").unwrap();
         assert_eq!(resolve_exec_entry_file(&temp_dir), Some("index.ts".to_string()));
 
-        // 4. Package.json exists with main field pointing to non-existing file: should still fallback to index.ts
+        // Package.json exists with main field pointing to non-existing file: should still fallback to index.ts
         let pkg_json = temp_dir.join("package.json");
         std::fs::write(&pkg_json, r#"{"main": "nonexistent.ts"}"#).unwrap();
         assert_eq!(resolve_exec_entry_file(&temp_dir), Some("index.ts".to_string()));
 
-        // 5. Package.json exists with main field pointing to an existing file: should prefer package.json main field
+        // Package.json exists with main field pointing to an existing file: should prefer package.json main field
         let main_ts = temp_dir.join("main.ts");
         std::fs::write(&main_ts, "console.log('main.ts');").unwrap();
         std::fs::write(&pkg_json, r#"{"main": "main.ts"}"#).unwrap();
         assert_eq!(resolve_exec_entry_file(&temp_dir), Some("main.ts".to_string()));
 
-        // 6. Kumo.json exists and overrides package.json
+        // Kumo.json exists and overrides package.json
         let kumo_json = temp_dir.join("kumo.json");
         let kumo_main = temp_dir.join("kumo_main.ts");
         std::fs::write(&kumo_main, "console.log('kumo_main.ts');").unwrap();

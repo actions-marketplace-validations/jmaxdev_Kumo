@@ -259,4 +259,69 @@ impl SandboxRunner {
 
         cmd
     }
+
+    pub fn create_ci_command(
+        pkg_dir: &Path,
+        script: &str,
+        proxy_port: Option<u16>,
+    ) -> Command {
+        let mut cmd = Self::create_command(pkg_dir, script, false, proxy_port);
+        Self::purge_ci_secrets(&mut cmd);
+        cmd
+    }
+
+    fn purge_ci_secrets(cmd: &mut Command) {
+        let secret_prefixes = [
+            "GITHUB_TOKEN",
+            "GH_TOKEN",
+            "GITHUB_PAT",
+            "NPM_TOKEN",
+            "NODE_AUTH_TOKEN",
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "AZURE_CLIENT_SECRET",
+            "AZURE_TENANT_ID",
+            "AZURE_CLIENT_ID",
+            "GCP_SERVICE_ACCOUNT",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "DATABASE_URL",
+            "REDIS_URL",
+            "MONGO_URI",
+            "KUBE_TOKEN",
+            "KUBECONFIG",
+            "DOCKER_PASSWORD",
+            "DOCKER_TOKEN",
+            "SSH_PRIVATE_KEY",
+            "CODECOV_TOKEN",
+            "SONAR_TOKEN",
+            "SNYK_TOKEN",
+            "SENTRY_AUTH_TOKEN",
+            "SLACK_WEBHOOK",
+            "DISCORD_WEBHOOK",
+        ];
+
+        let secret_patterns = [
+            "SECRET",
+            "PASSWORD",
+            "PRIVATE_KEY",
+            "_TOKEN",
+            "_AUTH",
+            "_CREDENTIALS",
+        ];
+
+        for var in &secret_prefixes {
+            cmd.env_remove(var);
+        }
+
+        for (key, _) in std::env::vars() {
+            for pattern in &secret_patterns {
+                if key.to_uppercase().contains(pattern) {
+                    cmd.env_remove(&key);
+                    break;
+                }
+            }
+        }
+    }
 }
+

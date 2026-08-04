@@ -8,10 +8,14 @@ use serde_json;
 use std::path::PathBuf;
 
 pub async fn init_components() -> Result<(Store, SecurityEngine, Resolver)> {
-    let store_path = dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(kumo_core::config::KUMO_DIR_NAME)
-        .join(kumo_core::config::STORE_DIR_NAME);
+    let store_path = if let Ok(custom_dir) = std::env::var("KUMO_STORE_DIR") {
+        PathBuf::from(custom_dir)
+    } else {
+        dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(kumo_core::config::KUMO_DIR_NAME)
+            .join(kumo_core::config::STORE_DIR_NAME)
+    };
 
     let store = Store::new(store_path);
     store.init().await?;

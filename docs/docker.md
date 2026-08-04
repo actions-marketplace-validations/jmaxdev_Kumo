@@ -69,12 +69,12 @@ The official Kumo image includes:
 For optimized production images, you can use a multi-stage build:
 
 ```dockerfile
-# Stage 1: Install dependencies and Node.js
+# Stage 1: Fetch dependencies (Optimized layer caching)
 FROM ghcr.io/jmaxdev/kumo AS deps
 RUN kumo runtime use 22
 WORKDIR /app
 COPY package.json kumo.lock* ./
-RUN kumo install
+RUN kumo fetch && kumo ci
 
 # Stage 2: Build application
 FROM ghcr.io/jmaxdev/kumo AS builder
@@ -121,6 +121,9 @@ volumes:
 | Variable | Default | Description |
 |---|---|---|
 | `KUMO_HOME` | `/root/.kumo` | Kumo home directory (store, cache, config) |
+| `KUMO_STORE_DIR` | `~/.kumo/store` | Override path for the global content-addressable package store |
+| `KUMO_IGNORE_SCRIPTS` | `0` | Disables untrusted package lifecycle scripts when set to `1` |
+| `KUMO_OFFLINE` | `0` | Restricts package installation strictly to cached store tarballs |
 
 ---
 
