@@ -27,7 +27,7 @@ mkdir -p "$INSTALL_DIR"
 
 TEMP_DIR=$(mktemp -d)
 echo "Downloading $FILENAME..."
-curl -L "$REPO_URL/$FILENAME" -o "$TEMP_DIR/$FILENAME"
+curl -fsSL "$REPO_URL/$FILENAME" -o "$TEMP_DIR/$FILENAME"
 
 echo "Extracting..."
 tar -xzf "$TEMP_DIR/$FILENAME" -C "$TEMP_DIR"
