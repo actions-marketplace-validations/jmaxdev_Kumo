@@ -4,7 +4,7 @@ Integrate Kumo into your GitHub Actions workflow for zero-trust, ultra-fast CI/C
 
 ## Quick Start
 
-Add `jmaxdev/kumo@v1` to your workflow:
+Add `jmaxdev/kumo` to your workflow:
 
 ```yaml
 name: CI Pipeline
@@ -21,19 +21,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Kumo & Restore Cache
-        uses: jmaxdev/kumo@v1
+        uses: jmaxdev/kumo@latest
         with:
           version: 'latest'
           cache: true
 
       - name: Run Kumo CI Pipeline
-        run: kumo ci --format=sarif > kumo-audit.sarif
-
-      - name: Upload Security Report to GitHub
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: kumo-audit.sarif
+        run: kumo ci
 
       - name: Run Tests
         run: kumo run test
