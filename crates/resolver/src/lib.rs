@@ -255,8 +255,7 @@ impl Resolver {
         }
 
         let registry_url = match registry_raw.as_str() {
-            "npm" => kumo_core::config::DEFAULT_REGISTRY_NPM_URL.to_string(),
-            "kumo" => kumo_core::config::DEFAULT_REGISTRY_KUMO_URL.to_string(),
+            "npm" | "kumo" => kumo_core::config::DEFAULT_REGISTRY_NPM_URL.to_string(),
             other if other.starts_with("http://") || other.starts_with("https://") => {
                 other.trim_end_matches('/').to_string()
             }

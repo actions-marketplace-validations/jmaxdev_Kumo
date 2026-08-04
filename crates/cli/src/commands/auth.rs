@@ -1,55 +1,87 @@
 use anyhow::{Context, Result};
+use dialoguer::{Input, Password};
 use kumo_core::credentials;
-use kumo_core::keys;
-use std::time::Duration;
-use tokio::time::sleep;
 
 #[derive(clap::Args, Clone)]
 pub struct AuthCommand {
     #[arg(long, help = "Custom registry URL to authenticate with")]
     pub registry: Option<String>,
+
+    #[arg(long, help = "NPM authentication token")]
+    pub token: Option<String>,
+
+    #[arg(long, help = "NPM username")]
+    pub username: Option<String>,
+
+    #[arg(long, help = "NPM password")]
+    pub password: Option<String>,
 }
 
 #[async_trait::async_trait(?Send)]
 impl super::Command for AuthCommand {
     async fn run(&self, ctx: &super::CommandContext) -> anyhow::Result<()> {
-        execute(ctx, self.registry.as_deref()).await
+        execute(
+            ctx,
+            self.registry.as_deref(),
+            self.token.as_deref(),
+            self.username.as_deref(),
+            self.password.as_deref(),
+        )
+        .await
     }
 }
-
 
 pub async fn execute(
     ctx: &super::CommandContext,
     registry_opt: Option<&str>,
+    token_opt: Option<&str>,
+    username_opt: Option<&str>,
+    password_opt: Option<&str>,
 ) -> Result<()> {
-
     let registry_url = if let Some(r) = registry_opt {
         r.trim_end_matches('/').to_string()
     } else {
-        let resolved = ctx.resolver.registry_url().to_string();
-        if resolved == kumo_core::config::DEFAULT_REGISTRY_NPM_URL {
-            kumo_core::config::DEFAULT_REGISTRY_KUMO_URL.to_string()
-        } else {
-            resolved
-        }
+        ctx.resolver.registry_url().trim_end_matches('/').to_string()
     };
 
-    if registry_url != kumo_core::config::DEFAULT_REGISTRY_KUMO_URL {
-        anyhow::bail!("Authentication is only supported for the Kumo registry ({}).", kumo_core::config::DEFAULT_REGISTRY_KUMO_URL);
+    println!("Authenticating with registry: {}", registry_url);
+
+    if let Some(token) = token_opt {
+        let username = username_opt.unwrap_or("user");
+        credentials::set_credential(&registry_url, username.to_string(), token.to_string())?;
+        println!(
+            "\x1b[32m✓\x1b[0m Successfully stored NPM authentication token for \x1b[32m{}\x1b[0m!",
+            registry_url
+        );
+        return Ok(());
     }
 
-    println!("Starting authentication with registry: {}", registry_url);
+    let username = match username_opt {
+        Some(u) => u.to_string(),
+        None => Input::<String>::new()
+            .with_prompt("Username")
+            .interact_text()?,
+    };
 
-    let (_priv_pem, pub_pem) = keys::get_or_create_keypair()?;
+    let password = match password_opt {
+        Some(p) => p.to_string(),
+        None => Password::new()
+            .with_prompt("Password")
+            .interact()?,
+    };
 
-    let url = format!("{}/-/v1/login", registry_url);
+    let url = format!("{}/-/user/org.couchdb.user:{}", registry_url, username);
     let payload = serde_json::json!({
-        "publicKey": pub_pem,
+        "_id": format!("org.couchdb.user:{}", username),
+        "name": username,
+        "password": password,
+        "type": "user",
+        "roles": []
     });
 
-    println!("Requesting authentication session...");
     let response = ctx.resolver.client()
-        .post(&url)
+        .put(&url)
+        .header("Content-Type", "application/json")
         .json(&payload)
         .send()
         .await
@@ -59,54 +91,25 @@ pub async fn execute(
     let body_text = response.text().await.unwrap_or_default();
 
     if !status.is_success() {
-        anyhow::bail!("Failed to start login session ({})", body_text);
+        anyhow::bail!("NPM authentication failed ({}): {}", status, body_text);
     }
 
     let login_res: serde_json::Value = serde_json::from_str(&body_text)
-        .context("Failed to parse login session response")?;
+        .unwrap_or_else(|_| serde_json::json!({}));
 
-    let session_id = login_res.get("sessionId")
-        .and_then(|s| s.as_str())
-        .context("Missing sessionId in registry response")?;
+    let token = login_res
+        .get("token")
+        .and_then(|t| t.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            kumo_core::tarball::base64_encode(format!("{}:{}", username, password).as_bytes())
+        });
 
-    let login_url = login_res.get("loginUrl")
-        .and_then(|u| u.as_str())
-        .context("Missing loginUrl in registry response")?;
+    credentials::set_credential(&registry_url, username.clone(), token)?;
+    println!(
+        "\x1b[32m✓\x1b[0m Successfully authenticated as \x1b[32m{}\x1b[0m!",
+        username
+    );
 
-    println!("\n------------------------------------------------------------");
-    println!("Please authenticate in your browser:");
-    println!("{}", login_url);
-    println!("------------------------------------------------------------\n");
-
-
-    println!("Waiting for authorization...");
-    let poll_url = format!("{}/-/v1/login/poll/{}", registry_url, session_id);
-
-    loop {
-        sleep(Duration::from_secs(2)).await;
-
-        let poll_resp = match ctx.resolver.client().get(&poll_url).send().await {
-            Ok(resp) => resp,
-            Err(_) => continue,
-        };
-
-        if !poll_resp.status().is_success() {
-            continue;
-        }
-
-        let poll_body = poll_resp.text().await.unwrap_or_default();
-        if let Ok(res_val) = serde_json::from_str::<serde_json::Value>(&poll_body) {
-            let status_str = res_val.get("status").and_then(|s| s.as_str()).unwrap_or("pending");
-            if status_str == "done" {
-                if let Some(token) = res_val.get("token").and_then(|t| t.as_str()) {
-                    let username = res_val.get("username").and_then(|u| u.as_str()).unwrap_or("unknown");
-                    credentials::set_credential(&registry_url, username.to_string(), token.to_string())?;
-                    println!("\x1b[32m✓\x1b[0m Successfully authenticated as \x1b[32m{}\x1b[0m!", username);
-                    return Ok(());
-                }
-            } else if status_str == "failed" {
-                anyhow::bail!("Authentication session failed or was denied by the user.");
-            }
-        }
-    }
+    Ok(())
 }

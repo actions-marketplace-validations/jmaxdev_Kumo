@@ -401,20 +401,24 @@ kumo run
 kumo run build -- --production
 ```
 
-### `auth [--registry <URL>]`
-Authenticates with the Kumo registry. It generates a local cryptographic key pair (`private_key.pem` and `public_key.pem` inside `~/.kumo/`) and initiates a browser-based interactive OIDC login session.
+### `auth [--registry <URL>] [--token <TOKEN>] [--username <USER>] [--password <PASS>]`
+Authenticates with an NPM-compatible package registry using traditional credentials or an auth token.
 
-- `--registry`: Custom registry URL to authenticate with. Note that this command is **strictly restricted** to the official Kumo registry (`https://kumo.jmaxdev.site`).
+- `--registry`: Registry URL to authenticate with. Defaults to `https://registry.npmjs.org`.
+- `--token`: Optional authentication token.
+- `--username`: Optional registry username.
+- `--password`: Optional registry password.
 
 ```bash
 kumo auth
+kumo auth --token npm_xxxxxxxxxxxx
 ```
 
 ### `deps publish [path] [--registry <URL>]`
-Publishes a package to the Kumo registry. It packs the target directory into a `.tgz` tarball, signs the version's BLAKE3 integrity checksum using your private key, and submits the package to the registry.
+Publishes a package to an NPM-compatible registry. It packs the target directory into a `.tgz` tarball and submits it to the registry using stored credentials.
 
-- `[path]`: The path to the package directory to publish. Defaults to the current directory (`.`).
-- `--registry`: Custom registry URL to publish to. Note that this command is **strictly restricted** to the official Kumo registry (`https://kumo.jmaxdev.site`).
+- `[path]`: Path to the package directory to publish. Defaults to `.`.
+- `--registry`: Custom registry URL to publish to.
 
 ```bash
 kumo deps publish

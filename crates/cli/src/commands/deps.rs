@@ -1,13 +1,12 @@
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
+use dialoguer::Input;
 use kumo_core::credentials;
 use kumo_core::keys;
-use std::time::Duration;
-use tokio::time::sleep;
 
 #[derive(Subcommand, Clone)]
 pub enum DepsSubcommand {
-    #[command(about = "Publish a package to the Kumo registry")]
+    #[command(about = "Publish a package to the registry")]
     Publish {
         #[arg(default_value = ".")]
         path: String,
@@ -42,17 +41,8 @@ pub async fn execute_publish(
     let registry_url = if let Some(r) = registry_opt {
         r.trim_end_matches('/').to_string()
     } else {
-        let resolved = ctx.resolver.registry_url().to_string();
-        if resolved == kumo_core::config::DEFAULT_REGISTRY_NPM_URL {
-            kumo_core::config::DEFAULT_REGISTRY_KUMO_URL.to_string()
-        } else {
-            resolved
-        }
+        ctx.resolver.registry_url().trim_end_matches('/').to_string()
     };
-
-    if registry_url != kumo_core::config::DEFAULT_REGISTRY_KUMO_URL {
-        anyhow::bail!("Publishing is only supported for the Kumo registry ({}).", kumo_core::config::DEFAULT_REGISTRY_KUMO_URL);
-    }
 
     let token = credentials::get_token(&registry_url)
         .context(format!("No credentials found for registry {}. Please run 'kumo auth' first.", registry_url))?;
@@ -77,15 +67,20 @@ pub async fn execute_publish(
     let shasum = kumo_core::tarball::calculate_shasum(&tarball_bytes);
     let integrity = kumo_core::tarball::calculate_integrity(&tarball_bytes);
 
-    let home = dirs::home_dir().context("Could not determine home directory")?;
-    let priv_key_path = home.join(".kumo").join("private_key.pem");
-    if !priv_key_path.exists() {
-        anyhow::bail!("Private key not found at {}. Please run 'kumo auth' first to authenticate and register your keys.", priv_key_path.display());
-    }
-    let private_key_pem = std::fs::read_to_string(&priv_key_path)?;
-
-    println!("Signing version {} integrity...", version);
-    let kumo_signature = keys::sign_payload(&private_key_pem, &integrity)?;
+    let kumo_signature = if let Some(home) = dirs::home_dir() {
+        let priv_key_path = home.join(".kumo").join("private_key.pem");
+        if priv_key_path.exists() {
+            if let Ok(private_key_pem) = std::fs::read_to_string(&priv_key_path) {
+                keys::sign_payload(&private_key_pem, &integrity).ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
     let tarball_base64 = kumo_core::tarball::base64_encode(&tarball_bytes);
     let basename = name.split('/').last().unwrap_or(name);
@@ -93,12 +88,15 @@ pub async fn execute_publish(
     let tarball_url = format!("{}/{}/-/{}", registry_url, name, tarball_filename);
 
     let mut version_details = pkg_json.clone();
-    version_details["dist"] = serde_json::json!({
+    let mut dist_json = serde_json::json!({
         "integrity": integrity,
         "shasum": shasum,
-        "tarball": tarball_url,
-        "kumoSignature": kumo_signature
+        "tarball": tarball_url
     });
+    if let Some(sig) = kumo_signature {
+        dist_json["kumoSignature"] = serde_json::Value::String(sig);
+    }
+    version_details["dist"] = dist_json;
 
     let publish_payload = serde_json::json!({
         "_id": name,
@@ -133,59 +131,23 @@ pub async fn execute_publish(
     let mut status = response.status();
     let mut body_text = response.text().await.unwrap_or_default();
 
-    if status.as_u16() == 401 {
-        if let Ok(res_val) = serde_json::from_str::<serde_json::Value>(&body_text) {
-            if res_val.get("require2fa").and_then(|r| r.as_bool()) == Some(true) {
-                let session_id = res_val.get("sessionId").and_then(|s| s.as_str())
-                    .context("Missing sessionId in registry response")?;
-                let login_url = res_val.get("loginUrl").and_then(|u| u.as_str())
-                    .context("Missing loginUrl in registry response")?;
+    if status.as_u16() == 401 || status.as_u16() == 403 {
+        let is_otp_required = body_text.contains("OTP") || body_text.contains("one-time password") || body_text.contains("2fa");
+        if is_otp_required {
+            let otp: String = Input::new()
+                .with_prompt("Enter NPM OTP code")
+                .interact_text()?;
 
-                println!("\n------------------------------------------------------------");
-                println!("This publish operation requires a one-time password (OTP).");
-                println!("Please authorize the publish in your browser:");
-                println!("{}", login_url);
-                println!("------------------------------------------------------------\n");
-                println!("Waiting for authorization...");
-                let poll_url = format!("{}/-/v1/login/poll/{}", registry_url, session_id);
-
-                let publish_token = loop {
-                    sleep(Duration::from_secs(2)).await;
-
-                    let poll_resp = match ctx.resolver.client().get(&poll_url).send().await {
-                        Ok(resp) => resp,
-                        Err(_) => continue,
-                    };
-
-                    if !poll_resp.status().is_success() {
-                        continue;
-                    }
-
-                    let poll_body = poll_resp.text().await.unwrap_or_default();
-                    if let Ok(poll_val) = serde_json::from_str::<serde_json::Value>(&poll_body) {
-                        let status_str = poll_val.get("status").and_then(|s| s.as_str()).unwrap_or("pending");
-                        if status_str == "done" {
-                            if let Some(token) = poll_val.get("token").and_then(|t| t.as_str()) {
-                                break token.to_string();
-                            }
-                        } else if status_str == "failed" {
-                            anyhow::bail!("Publish authorization session failed or was denied by the user.");
-                        }
-                    }
-                };
-
-                println!("Publish authorized. Retrying publish...");
-                response = ctx.resolver.client()
-                    .put(&url)
-                    .header("Authorization", format!("Bearer {}", token))
-                    .header("npm-otp", publish_token)
-                    .json(&publish_payload)
-                    .send()
-                    .await
-                    .context("Failed to communicate with registry on retry")?;
-                status = response.status();
-                body_text = response.text().await.unwrap_or_default();
-            }
+            response = ctx.resolver.client()
+                .put(&url)
+                .header("Authorization", format!("Bearer {}", token))
+                .header("npm-otp", otp)
+                .json(&publish_payload)
+                .send()
+                .await
+                .context("Failed to communicate with registry on OTP retry")?;
+            status = response.status();
+            body_text = response.text().await.unwrap_or_default();
         }
     }
 
@@ -201,4 +163,3 @@ pub async fn execute_publish(
         anyhow::bail!("Publish failed with status {}: {}", status, body_text);
     }
 }
-
